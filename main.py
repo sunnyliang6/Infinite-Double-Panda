@@ -13,7 +13,7 @@
 # and instructions screen).
 ####################################
 
-import math, random, copy, time
+import math, random, copy, time, pygame
 from characters import *
 from terrain import *
 # following framework from cmu_112_graphics

@@ -18,63 +18,73 @@
 ####################################
 
 import math, random, copy, time
-
+import pygame as py
 # following framework from cmu_112_graphics
 from cmu_112_graphics import *
 
 # players that the user controls
 # two types of Player: GiantPanda and RedPanda
 class Player(object):
-    scaledWidth = 50 # desired width
-    scaledHeight = 56 # made this a class attribute to access in Platform class
-                      # without having to make an instance
-    
-    # following function derived from https://www.cs.cmu.edu/~112/notes/notes-animations-part3.html
-    def getSprites(self, spritesheet, spriteY0, spriteY1):
-        # get sprites from one spritesheet
-        spritesInDir = [ ]
-        for i in range(6):
-            spriteWidth = 100 # based on image
-            spriteSheetMargin = 0 # based on image
-            spriteSheetWidth, spriteSheetHeight = spritesheet.size
-            sprite = spritesheet.crop((spriteSheetWidth/6*i, 
-                                       spriteY0, 
-                                       spriteWidth+spriteSheetWidth/6*i, 
-                                       spriteY1))
-            scaleFactor = Player.scaledWidth / spriteWidth
-            sprite = self.app.scaleImage(sprite, scaleFactor)
-            spritesInDir.append(sprite)
-        return spritesInDir
+    width = 50
+    height = 56 # made this a class attribute to access in Platform
+                # class without having to make an instance
+
+    def __init__(self):
+        self.walkSpeed = 10 # originally self.dx in main.py
+
+        # movement booleans
+        self.isWalkingRight = False
+        self.isWalkingLeft = False
+        self.isFalling = False
+        self.isJumping = False
+        self.reachedTopOfJump = False
+
+        # jump-related
+        jumpHeightConstant = 20
+        self.jumpHeight = self.height + jumpHeightConstant
+        self.jumpSpeed = 15
+        self.jumpStartingHeight = self.y
+
+        self.spriteCounter = 3
+        self.spriteStanding = 3
+
+        self.livesLeft = 5
+        self.platformUnder = None
 
 # one of the players is giant panda
 class GiantPanda(Player):
     def __init__(self, name, app):
         self.name = name
         self.app = app
+
         # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
-        spritesheetRight = self.app.loadImage('gpspritesheetright.png')
-        spritesheetLeft = self.app.loadImage('gpspritesheetleft.png')
-        spriteHeight = 112 # based on image
-        self.spritesMoveRight = super().getSprites(spritesheetRight, 0, spriteHeight)
-        self.spritesMoveLeft = super().getSprites(spritesheetLeft, 0, spriteHeight)
-        self.currSpritesInDir = self.spritesMoveRight
-        self.spriteCounter = 2
+        self.spritesRight = [self.app.loadImage('images/gp/gp-rspr1.png'),
+                             self.app.loadImage('images/gp/gp-rspr2.png'),
+                             self.app.loadImage('images/gp/gp-rspr3.png'),
+                             self.app.loadImage('images/gp/gp-rspr4.png'),
+                             self.app.loadImage('images/gp/gp-rspr5.png'),
+                             self.app.loadImage('images/gp/gp-rspr6.png')]
+        self.spritesLeft =  [self.app.loadImage('images/gp/gp-lspr1.png'),
+                             self.app.loadImage('images/gp/gp-lspr2.png'),
+                             self.app.loadImage('images/gp/gp-lspr3.png'),
+                             self.app.loadImage('images/gp/gp-lspr4.png'),
+                             self.app.loadImage('images/gp/gp-lspr5.png'),
+                             self.app.loadImage('images/gp/gp-lspr6.png')]
+        self.spritesCurrDir = self.spritesRight
 
         # starting position
-        self.startingX = 250
-        self.x = self.startingX
-        self.y = 475 # y is anchored south in view
+        self.x = 250
+        self.y = 475 # 475 is floorLevel, y is anchored south in view
 
         # corners of body
-        self.x0 = self.x - self.scaledWidth / 2
-        self.x1 = self.x + self.scaledWidth / 2
+        self.x0 = self.x - self.width / 2
+        self.x1 = self.x + self.width / 2
         self.y0 = self.y
-        self.y1 = self.y - self.scaledHeight
+        self.y1 = self.y - self.height
 
-        self.isFalling = False
-        self.livesLeft = 5
-        self.platformUnder = None
+        super().__init__()
 
+        # GiantPanda specific ability: killing enemies
         self.canKill = True
     
     def __eq__(self, other):
@@ -85,29 +95,41 @@ class RedPanda(Player):
     def __init__(self, name, app):
         self.name = name
         self.app = app
+
         # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
-        spritesheetRight = self.app.loadImage('rpspritesheetRight.png')
-        spritesheetLeft = self.app.loadImage('rpspritesheetLeft.png')
-        spriteHeight = 112 # based on image
-        self.spritesMoveRight = super().getSprites(spritesheetRight, 0, spriteHeight)
-        self.spritesMoveLeft = super().getSprites(spritesheetLeft, 0, spriteHeight)
-        self.currSpritesInDir = self.spritesMoveRight
-        self.spriteCounter = 2
+        self.spritesRight = [self.app.loadImage('images/rp/rp-rspr1.png'),
+                             self.app.loadImage('images/rp/rp-rspr2.png'),
+                             self.app.loadImage('images/rp/rp-rspr3.png'),
+                             self.app.loadImage('images/rp/rp-rspr4.png'),
+                             self.app.loadImage('images/rp/rp-rspr5.png'),
+                             self.app.loadImage('images/rp/rp-rspr6.png')]
+        self.spritesLeft =  [self.app.loadImage('images/rp/rp-lspr1.png'),
+                             self.app.loadImage('images/rp/rp-lspr2.png'),
+                             self.app.loadImage('images/rp/rp-lspr3.png'),
+                             self.app.loadImage('images/rp/rp-lspr4.png'),
+                             self.app.loadImage('images/rp/rp-lspr5.png'),
+                             self.app.loadImage('images/rp/rp-lspr6.png')]
+        self.spritesCurrDir = self.spritesRight
 
         # starting position
-        self.startingX = 180 # default otherPlayer is set back from currPlayer
-        self.x = self.startingX
-        self.y = 475 # y is anchored south in view
+        self.x = 180 # default otherPlayer is set back from currPlayer
+        self.y = 475 # 475 is floorLevel, y is anchored south in view
 
         # corners of body
-        self.x0 = self.x - self.scaledWidth / 2
-        self.x1 = self.x + self.scaledWidth / 2
+        self.x0 = self.x - self.width / 2
+        self.x1 = self.x + self.width / 2
         self.y0 = self.y
-        self.y1 = self.y - self.scaledHeight
+        self.y1 = self.y - self.height
 
-        self.isFalling = False
-        self.livesLeft = 5
-        self.platformUnder = None
+        super().__init__()
+
+        # RedPanda specific ability: climbing
+        self.climbSpeed = 10
+        self.isClimbingUp = False
+        self.isClimbingDown = False
+        self.isOnBamboo = False
+        self.isJumpingOffBambooRight = False
+        self.isJumpingOffBambooLeft = False
     
     def __eq__(self, other):
         return (isinstance(other, RedPanda) and (self.name == other.name))
@@ -115,14 +137,17 @@ class RedPanda(Player):
 # enemies cause players to lose lives when they collide or get attacked
 # two types of Enemy: BasicEnemy and ArcherEnemy
 class Enemy(object):
-    scaledWidth = 50 # desired width
-    scaledHeight = 60
+    width = 50 
+    height = 60
 
     def __init__(self, platform, app):
-        self.app = app
+        self.walkSpeed = 5
+        self.spriteCounter = 0
+
+        # Enemy is on a platform
         self.platform = platform
-        self.maxLeft = platform.x0 + Enemy.scaledWidth / 2
-        self.maxRight = platform.x1 - Enemy.scaledWidth / 2
+        self.maxLeft = platform.x0 + Enemy.width / 2
+        self.maxRight = platform.x1 - Enemy.width / 2
 
         # starting position
         self.x = random.randint(self.maxLeft, self.maxRight)
@@ -130,10 +155,10 @@ class Enemy(object):
         self.collidingWithPlayers = False
 
         # corners of body
-        self.x0 = self.x - self.scaledWidth / 2
-        self.x1 = self.x + self.scaledWidth / 2
+        self.x0 = self.x - self.width / 2
+        self.x1 = self.x + self.width / 2
         self.y0 = self.y
-        self.y1 = self.y - self.scaledHeight
+        self.y1 = self.y - self.height
 
         self.collidingWithGP = False
         self.collidingWithRP = False
@@ -150,7 +175,7 @@ class Enemy(object):
                                        spriteY0, 
                                        spriteWidth+spriteSheetWidth/4*i, 
                                        spriteY1))
-            scaleFactor = Enemy.scaledWidth / spriteWidth
+            scaleFactor = Enemy.width / spriteWidth
             sprite = self.app.scaleImage(sprite, scaleFactor)
             spritesInDir.append(sprite)
         return spritesInDir
@@ -181,17 +206,28 @@ class BasicEnemy(Enemy):
     def __init__(self, platform, app):
         super().__init__(platform, app)
         self.name = 'Basic Enemy'
-
-        # note: will have different picture later
-        # following picture from https://i.pinimg.com/originals/7d/59/5a/7d595a64c99a634d94759de8096cca14.png
-        spritesheet = self.app.loadImage('basicenemysprites.png')
-        spriteHeight = 420 # based on image at url
-        self.spritesMoveRight = self.getSprites(spritesheet, 1900, 1900 + spriteHeight)
-        self.spritesMoveLeft = self.getSprites(spritesheet, 1300, 1300 + spriteHeight)
-        self.currSpritesInDir = self.spritesMoveRight
-        self.spriteCounter = 1
+        self.app = app
         self.scoreGain = 250
-        self.dx = 5
+
+        # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
+        # self.spritesRight = [self.app.loadImage('images/be-rspr1.png'),
+        #                          self.app.loadImage('images/be-rspr2.png'),
+        #                          self.app.loadImage('images/be-rspr3.png'),
+        #                          self.app.loadImage('images/be-rspr4.png'),
+        #                          self.app.loadImage('images/be-rspr5.png'),
+        #                          self.app.loadImage('images/be-rspr6.png')]
+        # self.spritesLeft =  [self.app.loadImage('images/be-lspr1.png'),
+        #                          self.app.loadImage('images/be-lspr2.png'),
+        #                          self.app.loadImage('images/be-lspr3.png'),
+        #                          self.app.loadImage('images/be-lspr4.png'),
+        #                          self.app.loadImage('images/be-lspr5.png'),
+        #                          self.app.loadImage('images/be-lspr6.png')]
+        # self.spritesCurrDir = self.spritesRight
+        spritesheet = self.app.loadImage('images/basicenemysprites.png')
+        spriteHeight = 420 # based on image at url
+        self.spritesRight = self.getSprites(spritesheet, 1900, 1900 + spriteHeight)
+        self.spritesLeft = self.getSprites(spritesheet, 1300, 1300 + spriteHeight)
+        self.spritesCurrDir = self.spritesRight
 
     # when the GiantPanda kills the enemy, it gains points from the enemy
     def die(self):
@@ -208,20 +244,32 @@ class ArcherEnemy(Enemy):
     def __init__(self, platform, app):
         super().__init__(platform, app)
         self.name = 'Archer Enemy'
-
-        # note: will have different picture later
-        # following picture from https://i.pinimg.com/originals/7d/59/5a/7d595a64c99a634d94759de8096cca14.png
-        spritesheet = self.app.loadImage('archerenemysprites.png')
-        spriteHeight = 420 # based on image at url
-        self.spritesMoveRight = self.getSprites(spritesheet, 1900, 1900 + spriteHeight)
-        self.spritesMoveLeft = self.getSprites(spritesheet, 1300, 1300 + spriteHeight)
-        self.currSpritesInDir = self.spritesMoveRight
-        self.tempShootingSprite = None
-        self.spriteCounter = 1
+        self.app = app
         self.scoreGain = 300
-        self.dx = 5
 
-        self.weapon = Weapon(self.x, self.y - (self.scaledHeight // 2), self.app)
+        # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
+        # self.spritesRight = [self.app.loadImage('images/ae-rspr1.png'),
+        #                          self.app.loadImage('images/ae-rspr2.png'),
+        #                          self.app.loadImage('images/ae-rspr3.png'),
+        #                          self.app.loadImage('images/ae-rspr4.png'),
+        #                          self.app.loadImage('images/ae-rspr5.png'),
+        #                          self.app.loadImage('images/ae-rspr6.png')]
+        # self.spritesLeft =  [self.app.loadImage('images/ae-lspr1.png'),
+        #                          self.app.loadImage('images/ae-lspr2.png'),
+        #                          self.app.loadImage('images/ae-lspr3.png'),
+        #                          self.app.loadImage('images/ae-lspr4.png'),
+        #                          self.app.loadImage('images/ae-lspr5.png'),
+        #                          self.app.loadImage('images/ae-lspr6.png')]
+        # self.spritesCurrDir = self.spritesRight
+        spritesheet = self.app.loadImage('images/archerenemysprites.png')
+        spriteHeight = 420 # based on image at url
+        self.spritesRight = self.getSprites(spritesheet, 1900, 1900 + spriteHeight)
+        self.spritesLeft = self.getSprites(spritesheet, 1300, 1300 + spriteHeight)
+        self.spritesCurrDir = self.spritesRight
+
+        # ArcherEnemy specific ability: shooting
+        self.tempShootingSprite = None
+        self.weapon = Weapon(self.x, self.y - (self.height // 2), self.app)
         self.isShooting = False
         self.shootCount = 0 # can only shoot 3 times at once every 3 seconds
         self.shootingWaitTime = 3 # seconds
@@ -234,7 +282,7 @@ class ArcherEnemy(Enemy):
     # reset the Weapon and reset boolean
     def resetWeapon(self):
         self.isShooting = False
-        self.weapon.reset(self.x, self.y - (self.scaledHeight // 2))
+        self.weapon.reset(self.x, self.y - (self.height // 2))
 
     def __eq__(self, other):
         return (isinstance(other, ArcherEnemy) and (self.x == other.x) and (self.y == other.y))

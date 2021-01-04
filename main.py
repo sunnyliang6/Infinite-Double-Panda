@@ -13,7 +13,8 @@
 # and instructions screen).
 ####################################
 
-import math, random, copy, time, pygame
+import math, random, copy, time
+import pygame as py
 from characters import *
 from terrain import *
 # following framework from cmu_112_graphics
@@ -24,7 +25,7 @@ class SplashScreenMode(Mode):
     def appStarted(self):
         # background contains images from the original Double Panda game:
         # https://www.coolmathgames.com/0-double-panda
-        self.background = self.loadImage('introbackground.png')
+        self.background = self.loadImage('images/introbackground.png')
 
     def redrawAll(self, canvas):
         canvas.create_image(self.width/2, self.height/2, image=ImageTk.PhotoImage(self.background))
@@ -45,37 +46,12 @@ class GameMode(Mode):
 
         # starting floor level for players
         self.floorLevel = 475
-        self.giantPanda.y = self.floorLevel
-        self.redPanda.y = self.floorLevel
         self.maxCurrPlayerX = self.currPlayer.x
         self.enemyUnderCurrPlayer = None
 
         # does not change for either current character
         self.scrollX = 0
-        self.dx = 10
         self.dirKeysPressed = set()
-
-        # for walking
-        self.currPlayerIsWalkingRight = False
-        self.currPlayerIsWalkingLeft = False
-        # note: isFalling is defined in GiantPanda and RedPanda
-
-        # for jumping
-        self.jumpHeightConstant = 20
-        self.jumpHeight = Player.scaledHeight + self.jumpHeightConstant
-        self.jumpSpeed = 15
-        self.jumpStartingHeight = self.floorLevel
-        self.currPlayerIsJumping = False
-        self.currPlayerReachedTopOfJump = False
-        self.jumpsPerPress = 0
-
-        # for climbing
-        self.climbSpeed = 10
-        self.currPlayerIsClimbingUp = False
-        self.currPlayerIsClimbingDown = False
-        self.currPlayerIsOnBamboo = False
-        self.currPlayerIsJumpingOffBambooRight = False
-        self.currPlayerIsJumpingOffBambooLeft = False
 
         # for switching between players
         self.scrollSpeedWhenSwitching = 10
@@ -90,8 +66,8 @@ class GameMode(Mode):
         # background
         # background and floor images are from the original Double Panda game:
         # https://www.coolmathgames.com/0-double-panda
-        self.background = self.loadImage('gamebackground.png')
-        self.floor = self.loadImage('floor.png')
+        self.background = self.loadImage('images/gamebackground.png')
+        self.floor = self.loadImage('images/floor.png')
 
         # platforms
         self.platforms = []
@@ -129,7 +105,7 @@ class GameMode(Mode):
         self.gameOver = False
         # game over image contains images from the original Double Panda game:
         # https://www.coolmathgames.com/0-double-panda
-        self.gameOverImage = self.loadImage('gameover.png')
+        self.gameOverImage = self.loadImage('images/gameover.png')
 
     # called every key press
     def keyPressed(self, event):
@@ -145,9 +121,9 @@ class GameMode(Mode):
         elif (event.key == 's'):
             self.score += 10000
         elif (event.key == 'Space'): # switch players
-            if (not self.currPlayerIsWalkingRight and 
-                not self.currPlayerIsWalkingRight and 
-                not self.currPlayerIsJumping and 
+            if (not self.currPlayer.isWalkingRight and 
+                not self.currPlayer.isWalkingRight and 
+                not self.currPlayer.isJumping and 
                 not self.currPlayer.isFalling):
                 if self.currPlayer == self.giantPanda:
                     self.currPlayer = self.redPanda
@@ -157,53 +133,59 @@ class GameMode(Mode):
                     self.otherPlayer = self.redPanda
                 self.isSwitching = True
                 # check if old currPlayer is on new currPlayer's head
-                currPlayerHead = self.currPlayer.y - self.currPlayer.scaledHeight
+                currPlayerHead = self.currPlayer.y - self.currPlayer.height
                 if (self.otherPlayer.y == currPlayerHead):
                     self.otherPlayerIsOnCurr = True
                 return
         elif (event.key == 'Right'):
-            if (self.currPlayer == self.redPanda and self.currPlayerIsOnBamboo):
-                self.currPlayerIsJumpingOffBambooRight = True
-                self.jumpStartingHeight = self.currPlayer.y
-            elif (not self.currPlayerIsJumpingOffBambooRight):
-                self.currPlayerIsWalkingRight = True
+            if (self.currPlayer == self.redPanda):
+                if self.currPlayer.isOnBamboo:
+                    self.currPlayer.isJumpingOffBambooRight = True
+                    self.currPlayer.jumpStartingHeight = self.currPlayer.y
+                elif not self.currPlayer.isJumpingOffBambooRight:
+                    self.currPlayer.isWalkingRight = True
+            else:
+                self.currPlayer.isWalkingRight = True
         elif (event.key == 'Left'):
-            if (self.currPlayer == self.redPanda and self.currPlayerIsOnBamboo):
-                self.currPlayerIsJumpingOffBambooLeft = True
-                self.jumpStartingHeight = self.currPlayer.y
-            elif (not self.currPlayerIsJumpingOffBambooLeft):
-                self.currPlayerIsWalkingLeft = True
+            if (self.currPlayer == self.redPanda):
+                if self.currPlayer.isOnBamboo:
+                    self.currPlayer.isJumpingOffBambooLeft = True
+                    self.currPlayer.jumpStartingHeight = self.currPlayer.y
+                elif not self.currPlayer.isJumpingOffBambooLeft:
+                    self.currPlayer.isWalkingLeft = True
+            else:
+                self.currPlayer.isWalkingLeft = True
         elif (event.key == 'Up'):
             if (self.currPlayer == self.redPanda and 
-                not self.currPlayerIsWalkingRight and 
-                not self.currPlayerIsWalkingLeft):
+                not self.currPlayer.isWalkingRight and 
+                not self.currPlayer.isWalkingLeft):
                 self.currBamboo = self.atBamboo()
                 if ((self.currBamboo != None and self.currPlayer.y == self.currBamboo.startingHeight)
-                    or self.currPlayerIsOnBamboo):
-                    self.currPlayerIsClimbingUp = True
-                    self.currPlayerIsOnBamboo = True
+                    or self.currPlayer.isOnBamboo):
+                    self.currPlayer.isClimbingUp = True
+                    self.currPlayer.isOnBamboo = True
                     return
                 else:
                     pass
             if (self.currPlayer.y == self.findGoalHeight(self.currPlayer)):
                 # only allowed to jump if currPlayer is on a ground
-                self.currPlayerIsJumping = True
-                self.jumpStartingHeight = self.currPlayer.y
+                self.currPlayer.isJumping = True
+                self.currPlayer.jumpStartingHeight = self.currPlayer.y
         elif (event.key == 'Down'):
-            if self.currPlayerIsOnBamboo:
-                self.currPlayerIsClimbingUp = False
-                self.currPlayerIsClimbingDown = True
+            if (self.currPlayer == self.redPanda and self.currPlayer.isOnBamboo):
+                self.currPlayer.isClimbingUp = False
+                self.currPlayer.isClimbingDown = True
 
     # called every key release
     def keyReleased(self, event):
         if (event.key == 'Right'):
-            self.currPlayerIsWalkingRight = False
+            self.currPlayer.isWalkingRight = False
         elif (event.key == 'Left'):
-            self.currPlayerIsWalkingLeft = False
-        elif (event.key == 'Up'):
-            self.currPlayerIsClimbingUp = False
-        elif (event.key == 'Down'):
-            self.currPlayerIsClimbingDown = False
+            self.currPlayer.isWalkingLeft = False
+        elif (event.key == 'Up' and self.currPlayer == self.redPanda):
+            self.currPlayer.isClimbingUp = False
+        elif (event.key == 'Down' and self.currPlayer == self.redPanda):
+            self.currPlayer.isClimbingDown = False
         # note: do not control jumping boolean flag here because it is being
         # turned off by itself when currPlayer reaches ground
 
@@ -222,37 +204,45 @@ class GameMode(Mode):
 
     # following function derived from https://www.cs.cmu.edu/~112/notes/notes-animations-part3.html
     # scroll to make player visible as needed
-    def makePlayerVisible(self, dx):
+    def makePlayerVisible(self, walkSpeed):
         # cannot scroll to the left of the starting position
         if (self.currPlayer.x > self.width / 2):
-            self.scrollX += dx
+            self.scrollX += walkSpeed
 
     # executes stepping of currPlayer
-    def stepCurrPlayer(self, dx):
+    def stepCurrPlayer(self, walkSpeed):
         # update currPlayer's position
-        if (self.currPlayer.x - (self.currPlayer.scaledWidth / 2) + dx > 0):
+        if (self.currPlayer.x - (self.currPlayer.width / 2) + walkSpeed > 0):
             # cannot walk to the left of the starting position
-            self.currPlayer.x += dx
-            self.currPlayer.x0 += dx
-            self.currPlayer.x1 += dx
+            self.currPlayer.x += walkSpeed
+            self.currPlayer.x0 += walkSpeed
+            self.currPlayer.x1 += walkSpeed
             if (self.currPlayer.x > self.maxCurrPlayerX): # update maxCurrPlayerX
                 self.maxCurrPlayerX = self.currPlayer.x
 
         # change scroll (for drawing view)
-        self.makePlayerVisible(dx) # careful: dx is already negative for moving left
+        self.makePlayerVisible(walkSpeed) # careful: walkSpeed is already negative for moving left
 
         # get the correct sprite image list
-        if (dx < 0): # moving left
-            self.currPlayer.currSpritesInDir = self.currPlayer.spritesMoveLeft
-        elif (dx > 0): # moving right
-            self.currPlayer.currSpritesInDir = self.currPlayer.spritesMoveRight
+        if (walkSpeed < 0): # moving left
+            self.currPlayer.spritesCurrDir = self.currPlayer.spritesLeft
+        elif (walkSpeed > 0): # moving right
+            self.currPlayer.spritesCurrDir = self.currPlayer.spritesRight
         
         # go to next sprite image
-        if (not self.currPlayerIsJumpingOffBambooRight and
-            not self.currPlayerIsJumpingOffBambooLeft and 
-            not self.currPlayerIsJumping and 
-            not self.currPlayer.isFalling):
-            self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.currSpritesInDir)
+        if (not self.currPlayer.isJumping and not self.currPlayer.isFalling):
+            if (self.currPlayer == self.giantPanda):
+                self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.spritesCurrDir)
+            else:
+                if (not self.currPlayer.isJumpingOffBambooRight and
+                    not self.currPlayer.isJumpingOffBambooLeft):
+                    self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.spritesCurrDir)
+
+        # if (not self.currPlayer.isJumpingOffBambooRight and
+        #     not self.currPlayer.isJumpingOffBambooLeft and 
+        #     not self.currPlayer.isJumping and 
+        #     not self.currPlayer.isFalling):
+        #     self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.spritesCurrDir)
         
         # check if walking off the edge
         if (self.currPlayer.y != self.floorLevel):
@@ -270,10 +260,10 @@ class GameMode(Mode):
                 return True
         
         # check if it is possible to land on otherPlayer's head
-        if (self.otherPlayer.x - self.otherPlayer.scaledWidth / 2 <=
+        if (self.otherPlayer.x - self.otherPlayer.width / 2 <=
             self.currPlayer.x <= 
-            self.otherPlayer.x + self.otherPlayer.scaledWidth / 2):
-            otherPlayerHead = self.otherPlayer.y - self.otherPlayer.scaledHeight
+            self.otherPlayer.x + self.otherPlayer.width / 2):
+            otherPlayerHead = self.otherPlayer.y - self.otherPlayer.height
             if (self.currPlayer.y == otherPlayerHead):
                 return True
         
@@ -281,14 +271,14 @@ class GameMode(Mode):
     
     # increment climb
     def climbUpCurrPlayer(self):
-        if (self.currPlayer.y - self.currPlayer.scaledHeight - self.climbSpeed > 0):
+        if (self.currPlayer.y - self.currPlayer.height - self.climbSpeed > 0):
             # cannot past top of screen
             self.currPlayer.y -= self.climbSpeed
             self.currPlayer.y0 -= self.climbSpeed
             self.currPlayer.y1 -= self.climbSpeed
                 
         # go to next sprite image
-        self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.currSpritesInDir)
+        self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.spritesCurrDir)
     
     # increment climb
     def climbDownCurrPlayer(self):
@@ -298,25 +288,25 @@ class GameMode(Mode):
             self.currPlayer.y0 += self.climbSpeed
             self.currPlayer.y1 += self.climbSpeed
         else: # landed
-            self.currPlayer.currSpritesInDir = self.currPlayer.spritesMoveRight
-            self.currPlayerIsClimbingDown = False 
-            self.currPlayerIsOnBamboo = False
+            self.currPlayer.spritesCurrDir = self.currPlayer.spritesRight
+            self.currPlayer.isClimbingDown = False 
+            self.currPlayer.isOnBamboo = False
             self.currBamboo = None
                 
         # go to next sprite image
-        self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.currSpritesInDir)
+        self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.spritesCurrDir)
 
     # increment jumping off bamboo in a direction
     def jumpOffBambooCurrPlayer(self, dx):
-        self.currPlayerIsClimbingUp = False
-        self.currPlayerIsClimbingDown = False
-        self.currPlayerIsOnBamboo = False
+        self.currPlayer.isClimbingUp = False
+        self.currPlayer.isClimbingDown = False
+        self.currPlayer.isOnBamboo = False
         self.currBamboo = None
 
         # jump off left or right
 
         # update currPlayer's position
-        if (self.currPlayer.x - (self.currPlayer.scaledWidth / 2) + dx > 0):
+        if (self.currPlayer.x - (self.currPlayer.width / 2) + dx > 0):
             # cannot walk to the left of the starting position
             self.currPlayer.x += dx
             self.currPlayer.x0 += dx
@@ -329,30 +319,30 @@ class GameMode(Mode):
 
         # get the correct sprite image list
         if (dx < 0): # moving left
-            self.currPlayer.currSpritesInDir = self.currPlayer.spritesMoveLeft
+            self.currPlayer.spritesCurrDir = self.currPlayer.spritesLeft
         elif (dx > 0): # moving right
-            self.currPlayer.currSpritesInDir = self.currPlayer.spritesMoveRight
+            self.currPlayer.spritesCurrDir = self.currPlayer.spritesRight
 
-        if (self.currPlayerReachedTopOfJump == False): # jump up
-            if (self.currPlayer.y > self.jumpStartingHeight - self.jumpHeight):
-                self.currPlayer.y -= self.jumpSpeed
-                self.currPlayer.y0 -= self.jumpSpeed
-                self.currPlayer.y1 -= self.jumpSpeed
+        if (self.currPlayer.reachedTopOfJump == False): # jump up
+            if (self.currPlayer.y > self.currPlayer.jumpStartingHeight - self.currPlayer.jumpHeight):
+                self.currPlayer.y -= self.currPlayer.jumpSpeed
+                self.currPlayer.y0 -= self.currPlayer.jumpSpeed
+                self.currPlayer.y1 -= self.currPlayer.jumpSpeed
             else:
-                self.currPlayer.y = self.jumpStartingHeight - self.jumpHeight
-                self.currPlayerReachedTopOfJump = True
+                self.currPlayer.y = self.currPlayer.jumpStartingHeight - self.currPlayer.jumpHeight
+                self.currPlayer.reachedTopOfJump = True
         else: # reached top of jump
             goalHeight = self.findGoalHeight(self.currPlayer)
-            if (abs(self.currPlayer.y - goalHeight) > self.jumpSpeed): # fall down
-                self.currPlayer.y += self.jumpSpeed
-                self.currPlayer.y0 += self.jumpSpeed
-                self.currPlayer.y1 += self.jumpSpeed
-            elif (abs(self.currPlayer.y - goalHeight) <= self.jumpSpeed): # reached ground
+            if (abs(self.currPlayer.y - goalHeight) > self.currPlayer.jumpSpeed): # fall down
+                self.currPlayer.y += self.currPlayer.jumpSpeed
+                self.currPlayer.y0 += self.currPlayer.jumpSpeed
+                self.currPlayer.y1 += self.currPlayer.jumpSpeed
+            elif (abs(self.currPlayer.y - goalHeight) <= self.currPlayer.jumpSpeed): # reached ground
                 self.currPlayer.y = self.currPlayer.y0 = goalHeight
-                self.currPlayer.y1 = goalHeight- self.currPlayer.scaledHeight
-                self.currPlayerReachedTopOfJump = False
-                self.currPlayerIsJumpingOffBambooRight = False
-                self.currPlayerIsJumpingOffBambooLeft = False
+                self.currPlayer.y1 = goalHeight- self.currPlayer.height
+                self.currPlayer.reachedTopOfJump = False
+                self.currPlayer.isJumpingOffBambooRight = False
+                self.currPlayer.isJumpingOffBambooLeft = False
                 return
 
         self.checkCandyCollisions()
@@ -360,30 +350,30 @@ class GameMode(Mode):
     # increment y coordinate of currPlayer during the jump
     def jumpCurrPlayer(self):
         # increment y coordinate based on what part of the jump currPlayer is on
-        if (self.currPlayerReachedTopOfJump == False): # jump up
-            if (self.currPlayer.y > self.jumpStartingHeight - self.jumpHeight):
-                self.currPlayer.y -= self.jumpSpeed
-                self.currPlayer.y0 -= self.jumpSpeed
-                self.currPlayer.y1 -= self.jumpSpeed
+        if (self.currPlayer.reachedTopOfJump == False): # jump up
+            if (self.currPlayer.y > self.currPlayer.jumpStartingHeight - self.currPlayer.jumpHeight):
+                self.currPlayer.y -= self.currPlayer.jumpSpeed
+                self.currPlayer.y0 -= self.currPlayer.jumpSpeed
+                self.currPlayer.y1 -= self.currPlayer.jumpSpeed
             else:
-                self.currPlayerReachedTopOfJump = True
+                self.currPlayer.reachedTopOfJump = True
         else: # fall back down
             self.currPlayer.isFalling = True
-            self.currPlayerIsJumping = False
-            self.currPlayerReachedTopOfJump = False
+            self.currPlayer.isJumping = False
+            self.currPlayer.reachedTopOfJump = False
         self.checkCandyCollisions()
 
     # increment y coordinate of currPlayer down during fall
     def fallPlayer(self, player, dy):
         goalHeight = self.findGoalHeight(player)
         #if (player.y < goalHeight):
-        if (abs(player.y - goalHeight) > self.jumpSpeed):
+        if (abs(player.y - goalHeight) > self.currPlayer.jumpSpeed):
             player.y += dy
             player.y0 += dy
             player.y1 += dy
-        elif (abs(player.y - goalHeight) <= self.jumpSpeed): # reached ground
+        elif (abs(player.y - goalHeight) <= self.currPlayer.jumpSpeed): # reached ground
             player.y = player.y0 = goalHeight
-            player.y1 = goalHeight - player.scaledHeight
+            player.y1 = goalHeight - player.height
             player.isFalling = False
             # when giant panda lands on the enemy, kill it
             if (self.currPlayer == self.giantPanda):
@@ -419,7 +409,7 @@ class GameMode(Mode):
                 # check if it is possible to land on an enemy's head (add if possible)
                 for enemy in platform.enemiesOn:
                     if (enemy.x0 < player.x0 < enemy.x1 or enemy.x0 < player.x1 < enemy.x1):
-                        enemyHead = enemy.y - enemy.scaledHeight
+                        enemyHead = enemy.y - enemy.height
                         possibleGoals.append(enemyHead)
                         possibleEnemyHeads[enemyHead] = enemy
 
@@ -429,7 +419,7 @@ class GameMode(Mode):
             # check if it is possible to land on otherPlayer's head (add if possible)
             if (self.otherPlayer.x0 <= player.x0 <= self.otherPlayer.x1 or 
                 self.otherPlayer.x0 <= player.x1 <= self.otherPlayer.x1):
-                otherPlayerHead = self.otherPlayer.y - self.otherPlayer.scaledHeight
+                otherPlayerHead = self.otherPlayer.y - self.otherPlayer.height
                 possibleGoals.append(otherPlayerHead)
 
         bestGoalHeight = self.floorLevel
@@ -494,7 +484,7 @@ class GameMode(Mode):
 
     # otherPlayer should fall if currPlayer walks out from under it
     def otherPlayerFallIfOnCurrPlayer(self):
-        currPlayerHead = self.currPlayer.y - self.currPlayer.scaledHeight
+        currPlayerHead = self.currPlayer.y - self.currPlayer.height
         if (self.otherPlayer.y == currPlayerHead and 
             (self.otherPlayer.x0 <= self.currPlayer.x0 <= self.otherPlayer.x1 or 
              self.otherPlayer.x0 <= self.currPlayer.x1 <= self.otherPlayer.x1)):
@@ -504,39 +494,50 @@ class GameMode(Mode):
     # called every timerFired
     def timerFiredMovements(self):
         # always be able to move right or left if 'R' or 'L' key is being pressed
-        if self.currPlayerIsWalkingRight:
-            self.stepCurrPlayer(+self.dx)
-        elif self.currPlayerIsWalkingLeft:
-            self.stepCurrPlayer(-self.dx)
+        if self.currPlayer.isWalkingRight:
+            self.stepCurrPlayer(+self.currPlayer.walkSpeed)
+        elif self.currPlayer.isWalkingLeft:
+            self.stepCurrPlayer(-self.currPlayer.walkSpeed)
         
-        if self.currPlayerIsJumping:
+        if self.currPlayer.isJumping:
             self.otherPlayerFallIfOnCurrPlayer()
             self.jumpCurrPlayer()
         elif self.currPlayer.isFalling:
-            self.fallPlayer(self.currPlayer, self.jumpSpeed)
-        elif self.currPlayerIsClimbingUp:
-            self.otherPlayerFallIfOnCurrPlayer()
-            self.climbUpCurrPlayer()
-        elif self.currPlayerIsClimbingDown:
-            self.climbDownCurrPlayer()
-        elif self.currPlayerIsJumpingOffBambooRight:
-            self.jumpOffBambooCurrPlayer(+self.dx)
-        elif self.currPlayerIsJumpingOffBambooLeft:
-            self.jumpOffBambooCurrPlayer(-self.dx)
+            self.fallPlayer(self.currPlayer, self.currPlayer.jumpSpeed)
         elif self.isSwitching:
             # execute the transition faster than usual timeDelay
             self.timerDelay = self.timerDelayDuringSwitching
             self.switchTransition()
+        # elif self.currPlayer.isClimbingUp:
+        #     self.otherPlayerFallIfOnCurrPlayer()
+        #     self.climbUpCurrPlayer()
+        # elif self.currPlayer.isClimbingDown:
+        #     self.climbDownCurrPlayer()
+        # elif self.currPlayer.isJumpingOffBambooRight:
+        #     self.jumpOffBambooCurrPlayer(+self.dx)
+        # elif self.currPlayer.isJumpingOffBambooLeft:
+        #     self.jumpOffBambooCurrPlayer(-self.dx)
+        
+        if (self.currPlayer == self.redPanda):
+            if self.currPlayer.isClimbingUp:
+                self.otherPlayerFallIfOnCurrPlayer()
+                self.climbUpCurrPlayer()
+            elif self.currPlayer.isClimbingDown:
+                self.climbDownCurrPlayer()
+            elif self.currPlayer.isJumpingOffBambooRight:
+                self.jumpOffBambooCurrPlayer(+self.currPlayer.walkSpeed)
+            elif self.currPlayer.isJumpingOffBambooLeft:
+                self.jumpOffBambooCurrPlayer(-self.currPlayer.walkSpeed)
         
         # check if otherPlayer is on currPlayer's head
         # purpose: otherPlayer should fall if currPlayer walks out from underneath
         if self.otherPlayerIsOnCurr:
             # check if currPlayer walked out from underneath
-            if (self.otherPlayer.x0 > self.currPlayer.x1 - self.dx or
-                self.otherPlayer.x1 < self.currPlayer.x0 + self.dx):
+            if (self.otherPlayer.x0 > self.currPlayer.x1 - self.currPlayer.walkSpeed or
+                self.otherPlayer.x1 < self.currPlayer.x0 + self.currPlayer.walkSpeed):
                 self.otherPlayer.isFalling = True
         if self.otherPlayer.isFalling:
-            self.fallPlayer(self.otherPlayer, self.jumpSpeed)
+            self.fallPlayer(self.otherPlayer, self.currPlayer.jumpSpeed)
         
         # check if currPlayer as redPanda is on an enemy's head
         # purpose: currPlayer should fall if enemy walks out from underneath
@@ -568,21 +569,21 @@ class GameMode(Mode):
 
         if (self.score <= 10000):
             targetX = targetPlayer.x
-            targetY = targetPlayer.y - targetPlayer.scaledHeight // 2
+            targetY = targetPlayer.y - targetPlayer.height // 2
             enemy.weapon.shootingCalculations(targetX, targetY, targetPlayer)
         else:
             # speed of weapon increases
             enemy.weapon.v *= 1.01
             
             # targetX changes based on direction of currPlayer
-            if (self.currPlayerIsWalkingLeft):
+            if (self.currPlayer.isWalkingLeft):
                 if (enemy.shootCount == 0):
                     targetX = targetPlayer.x
                 elif (enemy.shootCount == 1):
                     targetX = targetPlayer.x - 150
                 elif (enemy.shootCount == 2):
                     targetX = targetPlayer.x - 300
-            elif (self.currPlayerIsWalkingRight):
+            elif (self.currPlayer.isWalkingRight):
                 if (enemy.shootCount == 0):
                     targetX = targetPlayer.x
                 elif (enemy.shootCount == 1):
@@ -592,15 +593,15 @@ class GameMode(Mode):
             else:
                 targetX = targetPlayer.x
 
-        targetY = targetPlayer.y - targetPlayer.scaledHeight // 2
+        targetY = targetPlayer.y - targetPlayer.height // 2
         enemy.weapon.shootingCalculations(targetX, targetY, targetPlayer)
 
         if (targetX < enemy.x):
-            enemy.tempShootingSprite = enemy.spritesMoveLeft[0]
+            enemy.tempShootingSprite = enemy.spritesLeft[0]
         elif (targetX > enemy.x):
-            enemy.tempShootingSprite = enemy.spritesMoveRight[0]
+            enemy.tempShootingSprite = enemy.spritesRight[0]
         else:
-            enemy.tempShootingSprite = enemy.currSpritesInDir[enemy.spriteCounter]
+            enemy.tempShootingSprite = enemy.spritesCurrDir[enemy.spriteCounter]
 
     # increment the weapon's position
     def incrementShooting(self, enemy):
@@ -639,29 +640,29 @@ class GameMode(Mode):
                     (enemy.platform.x0 <= player.x0 < enemy.platform.x1 or
                      enemy.platform.x0 < player.x1 <= enemy.platform.x1)):
                     # close enough to player
-                    if (player.x + player.scaledWidth < enemy.x):
-                        enemy.currSpritesInDir = enemy.spritesMoveLeft
+                    if (player.x + player.width < enemy.x):
+                        enemy.spritesCurrDir = enemy.spritesLeft
                         continue
-                    elif (player.x - player.scaledWidth > enemy.x):
-                        enemy.currSpritesInDir = enemy.spritesMoveRight
+                    elif (player.x - player.width > enemy.x):
+                        enemy.spritesCurrDir = enemy.spritesRight
                         continue
 
-        if (enemy.currSpritesInDir == enemy.spritesMoveRight):
-            newX = enemy.x + enemy.dx
-            newX0 = enemy.x0 + enemy.dx
-            newX1 = enemy.x1 + enemy.dx
-        elif (enemy.currSpritesInDir == enemy.spritesMoveLeft):
-            newX = enemy.x - enemy.dx
-            newX0 = enemy.x0 - enemy.dx
-            newX1 = enemy.x1 - enemy.dx
+        if (enemy.spritesCurrDir == enemy.spritesRight):
+            newX = enemy.x + enemy.walkSpeed
+            newX0 = enemy.x0 + enemy.walkSpeed
+            newX1 = enemy.x1 + enemy.walkSpeed
+        elif (enemy.spritesCurrDir == enemy.spritesLeft):
+            newX = enemy.x - enemy.walkSpeed
+            newX0 = enemy.x0 - enemy.walkSpeed
+            newX1 = enemy.x1 - enemy.walkSpeed
         
         if (newX < enemy.maxLeft): 
             # too far off left
-            enemy.currSpritesInDir = enemy.spritesMoveRight
+            enemy.spritesCurrDir = enemy.spritesRight
             enemy.x = enemy.maxLeft
         elif (newX > enemy.maxRight): 
             # too far off right
-            enemy.currSpritesInDir = enemy.spritesMoveLeft
+            enemy.spritesCurrDir = enemy.spritesLeft
             enemy.x = enemy.maxRight
         else:
             enemy.x = newX
@@ -669,7 +670,7 @@ class GameMode(Mode):
             enemy.x1 = newX1
 
         # go to next sprite image
-        enemy.spriteCounter = (1 + enemy.spriteCounter) % len(enemy.currSpritesInDir)
+        enemy.spriteCounter = (1 + enemy.spriteCounter) % len(enemy.spritesCurrDir)
 
     # check if enemy is colliding with players
     def checkEnemyCollisions(self, enemy):
@@ -717,7 +718,7 @@ class GameMode(Mode):
                         self.predictTarget(enemy, result)
                         # start shooting
                         enemy.weapon.x = enemy.x
-                        enemy.weapon.y = enemy.y - (enemy.scaledHeight // 2)
+                        enemy.weapon.y = enemy.y - (enemy.height // 2)
                         self.incrementShooting(enemy)
                     else:
                         enemy.shootCount = 0
@@ -1066,7 +1067,7 @@ class GameMode(Mode):
                 # change sprite
                 sprite = enemy.tempShootingSprite
             else:
-                sprite = enemy.currSpritesInDir[enemy.spriteCounter]
+                sprite = enemy.spritesCurrDir[enemy.spriteCounter]
             canvas.create_image(cx, enemy.y, image=self.getCachedPhotoImage(sprite), anchor='s')
 
     # draws the current score
@@ -1086,13 +1087,13 @@ class GameMode(Mode):
     # draws the current player (the one being controlled right now)
     def drawCurrPlayer(self, canvas):
         cx = self.currPlayer.x - self.scrollX
-        currPlayerSprite = self.currPlayer.currSpritesInDir[self.currPlayer.spriteCounter]
+        currPlayerSprite = self.currPlayer.spritesCurrDir[self.currPlayer.spriteCounter]
         canvas.create_image(cx, self.currPlayer.y, image=self.getCachedPhotoImage(currPlayerSprite), anchor='s')
     
     # draws the other player
     def drawOtherPlayer(self, canvas):
         cx = self.otherPlayer.x - self.scrollX
-        otherPlayerSprite = self.otherPlayer.currSpritesInDir[self.otherPlayer.spriteCounter]
+        otherPlayerSprite = self.otherPlayer.spritesCurrDir[self.otherPlayer.spriteCounter]
         canvas.create_image(cx, self.otherPlayer.y, image=self.getCachedPhotoImage(otherPlayerSprite), anchor='s')
 
     # draws game over screen
@@ -1118,7 +1119,7 @@ class HelpMode(Mode):
     def appStarted(self):
         # background contains images from the original Double Panda game:
         # https://www.coolmathgames.com/0-double-panda
-        self.background = self.loadImage('instructions.png')
+        self.background = self.loadImage('images/instructions.png')
 
     def redrawAll(self, canvas):
         canvas.create_image(self.width/2, self.height/2, image=ImageTk.PhotoImage(self.background))

@@ -15,13 +15,14 @@
 ####################################
 
 import math, random, copy, time
+import pygame as py
 from characters import *
 # following framework from cmu_112_graphics
 from cmu_112_graphics import *
 
 # platforms to stand on in addition to the floor
 class Platform(object):
-    levelHeight = Player.scaledHeight + 15
+    levelHeight = Player.height + 15
     minLength = 125
     maxLength = 450
 
@@ -70,24 +71,24 @@ class Candy(object):
             self.candyType = 'Cupcake'
             self.scoreGain = 50
             # following picture captured from: https://www.coolmathgames.com/0-double-panda
-            self.image = self.app.loadImage('cupcake.png')
+            self.image = self.app.loadImage('images/cupcake.png')
             self.width, self.height = self.image.size
         elif (70 < r < 98):
             self.candyType = 'Pie Slice'
             self.scoreGain = 100
             # following picture captured from: https://www.coolmathgames.com/0-double-panda
-            self.image = self.app.loadImage('cupcake.png')
+            self.image = self.app.loadImage('images/cupcake.png')
             self.width, self.height = self.image.size
         else:
             self.candyType = 'Fortune Cookie'
             self.scoreGain = 500
             # following picture captured from: https://www.coolmathgames.com/0-double-panda
-            self.image = self.app.loadImage('cupcake.png')
+            self.image = self.app.loadImage('images/cupcake.png')
             self.width, self.height = self.image.size
     
     def makeIntoFriedRice(self):
         self.candyType = 'Fried Rice'
         self.scoreGain = 1000
         # following picture captured from: https://www.coolmathgames.com/0-double-panda
-        self.image = self.app.loadImage('friedrice.png')
+        self.image = self.app.loadImage('images/friedrice.png')
         self.width, self.height = self.image.size

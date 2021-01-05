@@ -19,6 +19,7 @@
 
 import math, random, copy, time
 import pygame as py
+#from terrain import *
 # following framework from cmu_112_graphics
 from cmu_112_graphics import *
 
@@ -28,8 +29,10 @@ class Player(object):
     width = 50
     height = 56 # made this a class attribute to access in Platform
                 # class without having to make an instance
+    maxX = 0
 
-    def __init__(self):
+    def __init__(self, app):
+        self.app = app
         self.walkSpeed = 10 # originally self.dx in main.py
 
         # movement booleans
@@ -42,14 +45,106 @@ class Player(object):
         # jump-related
         jumpHeightConstant = 20
         self.jumpHeight = self.height + jumpHeightConstant
-        self.jumpSpeed = 15
+        self.jumpSpeed = 7 # cannot be too small, will cross 0
+        self.fallSpeed = 0
         self.jumpStartingHeight = self.y
 
         self.spriteCounter = 3
         self.spriteStanding = 3
 
         self.livesLeft = 5
-        self.platformUnder = None
+        self.platformUnderneath = None
+        self.enemyUnderneath = None
+    
+    ####################################
+    # Movement methods
+    ####################################
+    
+    # returns True if Player is on a platform or otherPlayer head
+    # used to check whether to fall off platform while walking
+    # helper for step()
+    def checkIfOnPlatform(self, platforms, otherPlayer):
+        # check if Player is on a platform
+        for platform in platforms:
+            if (platform.x0 <= self.x <= platform.x1 and
+                self.y == self.app.floorLevel - platform.height):
+                return True
+
+        # check if Player is on otherPlayer's head
+        if (self.y == otherPlayer.y1):
+            if (otherPlayer.x0 <= self.x0 <= otherPlayer.x1 or 
+                otherPlayer.x0 <= self.x1 <= otherPlayer.x1):
+                return True
+        
+        return False
+    
+    # increment x coordinate while walking
+    def step(self, walkSpeed, platforms, otherPlayer):
+        # going to next sprite image is taken care of in child class step()
+
+        # update currPlayer's position
+        if (self.x - (self.width / 2) + walkSpeed > 0):
+            # cannot walk to the left of the starting position
+            self.x += walkSpeed
+            self.x0 += walkSpeed
+            self.x1 += walkSpeed
+            if (self.x > Player.maxX): # update maxX
+                Player.maxX = self.x
+
+        # get the correct sprite image list
+        if (walkSpeed < 0): # moving left
+            self.spritesCurrDir = self.spritesLeft
+        elif (walkSpeed > 0): # moving right
+            self.spritesCurrDir = self.spritesRight
+
+        # check if walking off the edge
+        if (self.y != self.app.floorLevel):
+            # if the currPlayer is not on a platform
+            self.isFalling = not self.checkIfOnPlatform(platforms, otherPlayer)
+    
+    # increment y coordinate up during the jump
+    def jump(self):
+        if (self.reachedTopOfJump == False): 
+            # jump up
+            if (self.y > self.jumpStartingHeight - self.jumpHeight): 
+                # has not reached top of jump
+                # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
+                dy = 0.6 * (self.jumpSpeed ** 2) # parabolic jumping
+                # print('jump', self.y, dy, self.jumpSpeed)
+                self.y -= dy
+                self.y0 -= dy
+                self.y1 -= dy
+                self.jumpSpeed -= 1
+            else:
+                # reached top of jump
+                self.reachedTopOfJump = True
+                self.y = self.jumpStartingHeight - self.jumpHeight
+        else: 
+            # start to fall back down
+            self.isJumping = False
+            self.fallSpeed = self.jumpSpeed + 1
+            self.jumpSpeed = 7 # reset
+            self.isFalling = True
+            self.reachedTopOfJump = False
+    
+    # increment y coordinate down during fall
+    def fall(self, goalHeight):
+        # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
+        dy = 0.5 * (self.fallSpeed ** 2) # parabolic jumping
+        if (abs(self.y - goalHeight) > dy):
+            # has not reached ground
+            # print('fall', self.y, dy, self.fallSpeed)
+            self.y += dy
+            self.y0 += dy
+            self.y1 += dy
+            self.fallSpeed += 1
+        elif (abs(self.y - goalHeight) <= dy): 
+            # reached ground
+            self.y = self.y0 = goalHeight
+            # print('fall', self.y, dy, self.jumpSpeed)
+            self.y1 = goalHeight - self.height
+            self.isFalling = False
+            self.fallSpeed = 0 # reset
 
 # one of the players is giant panda
 class GiantPanda(Player):
@@ -81,12 +176,37 @@ class GiantPanda(Player):
         self.x1 = self.x + self.width / 2
         self.y0 = self.y
         self.y1 = self.y - self.height
-
-        super().__init__()
+        
+        super().__init__(app)
 
         # GiantPanda specific ability: killing enemies
         self.canKill = True
+        self.enemyUnderneath = None
     
+    # wrapper for step function
+    def step(self, walkSpeed, platforms, otherPlayer):
+        super().step(walkSpeed, platforms, otherPlayer)
+
+        # go to next sprite image
+        if (not self.isJumping and not self.isFalling):
+            self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
+    
+    # wrapper for fall function: giantPanda can kill enemy during fall
+    def fall(self, goalHeight, enemies):
+        super().fall(goalHeight)
+        # when giant panda lands on the enemy, kill it
+        if (self.enemyUnderneath != None):
+            if self.canKill:
+                self.app.score += self.enemyUnderneath.die()
+                self.canKill = False
+                enemies.remove(self.enemyUnderneath)
+                self.enemyUnderneath.platform.enemiesOn.remove(self.enemyUnderneath)
+                self.enemyUnderneath = None
+                self.isFalling = True
+        else:
+            # can only kill once per time on enemy's head
+            self.canKill = True
+
     def __eq__(self, other):
         return (isinstance(other, GiantPanda) and (self.name == other.name))
 
@@ -121,7 +241,7 @@ class RedPanda(Player):
         self.y0 = self.y
         self.y1 = self.y - self.height
 
-        super().__init__()
+        super().__init__(app)
 
         # RedPanda specific ability: climbing
         self.climbSpeed = 10
@@ -130,7 +250,118 @@ class RedPanda(Player):
         self.isOnBamboo = False
         self.isJumpingOffBambooRight = False
         self.isJumpingOffBambooLeft = False
+        self.currBamboo = None
     
+    # wrapper for step function
+    def step(self, walkSpeed, platforms, otherPlayer):
+        super().step(walkSpeed, platforms, otherPlayer)
+
+        # go to next sprite image
+        if (not self.isJumping and not self.isFalling and 
+            not self.isJumpingOffBambooRight and
+            not self.isJumpingOffBambooLeft):
+            self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
+
+    # wrapper for fall function: redPanda cannot kill enemy during fall
+    def fall(self, goalHeight, enemies):
+        super().fall(goalHeight)
+
+    # returns True if redPanda is at a bamboo
+    def atBamboo(self, bamboos):
+        for bamboo in bamboos:
+            x0 = bamboo.x - bamboo.width / 2
+            x1 = bamboo.x + bamboo.width / 2
+            if (x0  <= self.x <= x1):
+                return bamboo
+        return None
+    
+    # increment climb up
+    def climbUp(self):
+        # cannot past top of screen
+        if (self.y - self.height - self.climbSpeed > 0):
+            self.y -= self.climbSpeed
+            self.y0 -= self.climbSpeed
+            self.y1 -= self.climbSpeed
+                
+        # go to next sprite image
+        self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
+    
+    # increment climb down
+    def climbDown(self):
+        # cannot climb down past bottom of bamboo
+        if (self.currPlayer.y - self.currBamboo.startingHeight + self.climbSpeed <= 0):
+            self.y += self.climbSpeed
+            self.y0 += self.climbSpeed
+            self.y1 += self.climbSpeed
+        else: # reached floor
+            self.spritesCurrDir = self.spritesRight
+            self.isClimbingDown = False 
+            self.isOnBamboo = False
+            self.currBamboo = None
+                
+        # go to next sprite image
+        self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.spritesCurrDir)
+    
+    # increment jumping off bamboo left or right
+    def jumpOffBamboo(self, walkSpeed):
+        # reset values
+        self.isClimbingUp = False
+        self.isClimbingDown = False
+        self.isOnBamboo = False
+        self.currBamboo = None
+
+        # increment step
+        if (self.x - (self.width / 2) + walkSpeed > 0):
+            # cannot walk to the left of the starting position
+            self.x += walkSpeed
+            self.x0 += walkSpeed
+            self.x1 += walkSpeed
+            if (self.x > Player.maxX): # update maxX
+                self.maxX = self.x
+
+        # get the correct sprite direction list
+        if (walkSpeed < 0): # moving left
+            self.spritesCurrDir = self.spritesLeft
+        elif (walkSpeed > 0): # moving right
+            self.spritesCurrDir = self.spritesRight
+
+        # increment jump
+        if (self.reachedTopOfJump == False): # jump up
+            if (self.y > self.jumpStartingHeight - self.jumpHeight):
+                # has not reached top of jump
+                # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
+                dy = 0.6 * (self.jumpSpeed ** 2) # parabolic jumping
+                # print('jump', self.y, dy, self.jumpSpeed)
+                self.y -= dy
+                self.y0 -= dy
+                self.y1 -= dy
+                self.jumpSpeed -= 1
+            else:
+                self.y = self.jumpStartingHeight - self.jumpHeight
+                self.fallSpeed = self.jumpSpeed + 1
+                self.jumpSpeed = 7 # reset
+                self.reachedTopOfJump = True
+        else: # reached top of jump
+            goalHeight = self.app.findGoalHeight(self)
+            # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
+            dy = 0.5 * (self.fallSpeed ** 2) # parabolic jumping
+            if (abs(self.y - goalHeight) > dy):
+                # has not reached ground
+                # print('fall', self.y, dy, self.fallSpeed)
+                self.y += dy
+                self.y0 += dy
+                self.y1 += dy
+                self.fallSpeed += 1
+            elif (abs(self.y - goalHeight) <= dy): # reached ground
+                self.y = self.y0 = goalHeight
+                # print('fall', self.y, dy, self.jumpSpeed)
+                self.y1 = goalHeight - self.height
+                self.reachedTopOfJump = False
+                self.isJumpingOffBambooRight = False
+                self.isJumpingOffBambooLeft = False
+                self.fallSpeed = 0 # reset
+                return
+
     def __eq__(self, other):
         return (isinstance(other, RedPanda) and (self.name == other.name))
 
@@ -179,6 +410,37 @@ class Enemy(object):
             sprite = self.app.scaleImage(sprite, scaleFactor)
             spritesInDir.append(sprite)
         return spritesInDir
+
+    # increment step / update position
+    def autoStepEnemy(self):
+        if (self.spritesCurrDir == self.spritesRight):
+            newX = self.x + self.walkSpeed
+            newX0 = self.x0 + self.walkSpeed
+            newX1 = self.x1 + self.walkSpeed
+        elif (self.spritesCurrDir == self.spritesLeft):
+            newX = self.x - self.walkSpeed
+            newX0 = self.x0 - self.walkSpeed
+            newX1 = self.x1 - self.walkSpeed
+        
+        if (newX < self.maxLeft): 
+            # too far off left
+            self.spritesCurrDir = self.spritesRight
+            self.x = self.maxLeft
+        elif (newX > self.maxRight): 
+            # too far off right
+            self.spritesCurrDir = self.spritesLeft
+            self.x = self.maxRight
+        else:
+            self.x = newX
+            self.x0 = newX0
+            self.x1 = newX1
+
+        # go to next sprite image
+        self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
+
+    # when the GiantPanda kills the enemy, it gains points from the enemy
+    def die(self):
+        return self.scoreGain
 
     # check if the enemy is colliding with given player
     def checkCollisions(self, player):
@@ -229,9 +491,24 @@ class BasicEnemy(Enemy):
         self.spritesLeft = self.getSprites(spritesheet, 1300, 1300 + spriteHeight)
         self.spritesCurrDir = self.spritesRight
 
-    # when the GiantPanda kills the enemy, it gains points from the enemy
-    def die(self):
-        return self.scoreGain
+    # increment step / update position
+    # BasicEnemy can walk towards player if it is on the same platform
+    # and the score is high
+    def autoStepEnemy(self):
+        if (self.app.score >= 10000):
+            for player in [self.app.currPlayer, self.app.otherPlayer]:
+                if (self.y0 > player.y >= self.y1 and
+                    (self.platform.x0 <= player.x0 < self.platform.x1 or
+                     self.platform.x0 < player.x1 <= self.platform.x1)):
+                    # close enough to player
+                    if (player.x + player.width < self.x):
+                        self.spritesCurrDir = self.spritesLeft
+                        continue
+                    elif (player.x - player.width > self.x):
+                        self.spritesCurrDir = self.spritesRight
+                        continue
+        
+        super().autoStepEnemy()
 
     def __eq__(self, other):
         return (isinstance(other, BasicEnemy) and (self.x == other.x) and (self.y == other.y))
@@ -275,9 +552,82 @@ class ArcherEnemy(Enemy):
         self.shootingWaitTime = 3 # seconds
         self.shootingStartWaitTime = 0
 
-    # when the GiantPanda kills the enemy, it gains points from the enemy
-    def die(self):
-        return self.scoreGain
+    # returns the player that is close enough to shoot at or None otherwise
+    def closeEnoughToShoot(self):
+        # enemy should be at or above the target player
+        if (0 < abs(self.x - self.app.currPlayer.x) < 200 and
+            self.y <= self.app.currPlayer.y):
+            return self.app.currPlayer
+        elif (0 < abs(self.x - self.app.otherPlayer.x) < 200 and
+            self.y <= self.app.otherPlayer.y):
+            return self.app.otherPlayer
+        return None
+
+    # predict where to shoot
+    def predictTarget(self, targetPlayer):
+        # stepping does not change weapon's position, so reset it here
+        self.weapon.x = self.x
+
+        if (self.app.score <= 10000):
+            targetX = targetPlayer.x
+            targetY = targetPlayer.y - targetPlayer.height // 2
+            self.weapon.shootingCalculations(targetX, targetY, targetPlayer)
+        else:
+            # speed of weapon increases
+            self.weapon.v *= 1.01
+            
+            # targetX changes based on direction of currPlayer
+            if (self.currPlayer.isWalkingLeft):
+                if (self.shootCount == 0):
+                    targetX = targetPlayer.x
+                elif (self.shootCount == 1):
+                    targetX = targetPlayer.x - 150
+                elif (self.shootCount == 2):
+                    targetX = targetPlayer.x - 300
+            elif (self.currPlayer.isWalkingRight):
+                if (self.shootCount == 0):
+                    targetX = targetPlayer.x
+                elif (self.shootCount == 1):
+                    targetX = targetPlayer.x + 150
+                elif (self.shootCount == 2):
+                    targetX = targetPlayer.x + 300
+            else:
+                targetX = targetPlayer.x
+
+        targetY = targetPlayer.y - targetPlayer.height // 2
+        self.weapon.shootingCalculations(targetX, targetY, targetPlayer)
+
+        if (targetX < self.x):
+            self.tempShootingSprite = self.spritesLeft[0]
+        elif (targetX > self.x):
+            self.tempShootingSprite = self.spritesRight[0]
+        else:
+            self.tempShootingSprite = self.spritesCurrDir[self.spriteCounter]
+
+    # increment the weapon's position
+    def incrementShooting(self):
+        weapon = self.weapon
+        newX = weapon.x + weapon.dx
+        newY = weapon.y + weapon.dy
+
+        if (weapon.y > self.app.floorLevel): 
+            # passed through floor
+            self.resetWeapon()
+            self.shootCount += 1
+        elif (abs(weapon.x - self.x) > 400):
+            # passed distance of 400 (went too far)
+            self.resetWeapon()
+            self.shootCount += 1
+        elif (weapon.targetPlayer.x0 <= newX <= weapon.targetPlayer.x1 and
+              weapon.targetPlayer.y0 >= newY >= weapon.targetPlayer.y1):
+            # hit target
+            weapon.targetPlayer.livesLeft -= 1
+            self.resetWeapon()
+            self.shootCount += 1
+        else:
+            # increment position
+            weapon.x = newX
+            weapon.y = newY
 
     # reset the Weapon and reset boolean
     def resetWeapon(self):

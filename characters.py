@@ -1,6 +1,4 @@
 ####################################
-# 15-112 Term Project
-# Name: Sunny Liang
 # This game is based on the original Double Panda game: 
 # https://www.coolmathgames.com/0-double-panda
 ####################################
@@ -17,565 +15,505 @@
 # Each class contains properties of the object and may contain images.
 ####################################
 
-import math, random, copy, time
-import pygame as py
-#from terrain import *
-# following framework from cmu_112_graphics
-from cmu_112_graphics import *
+import random, os, math
+import pygame as pg
+from settings import *
+vec = pg.math.Vector2
 
-# players that the user controls
-# two types of Player: GiantPanda and RedPanda
-class Player(object):
-    width = 50
-    height = 56 # made this a class attribute to access in Platform
-                # class without having to make an instance
-    maxX = 0
+class Player(pg.sprite.Sprite):
+    def __init__(self, game):
+        pg.sprite.Sprite.__init__(self)
+        self.game = game
 
-    def __init__(self, app):
-        self.app = app
-        self.walkSpeed = 10 # originally self.dx in main.py
+        self.pos = vec(0, floorLevel)
+        self.vel = vec(0, 0)
+        self.acc = vec(0, 0)
 
         # movement booleans
-        self.isWalkingRight = False
-        self.isWalkingLeft = False
-        self.isFalling = False
-        self.isJumping = False
-        self.reachedTopOfJump = False
+        self.isRunning = False
+        self.isInAir = False
 
-        # jump-related
-        jumpHeightConstant = 20
-        self.jumpHeight = self.height + jumpHeightConstant
-        self.jumpSpeed = 7 # cannot be too small, will cross 0
-        self.fallSpeed = 0
-        self.jumpStartingHeight = self.y
-
-        self.spriteCounter = 3
-        self.spriteStanding = 3
-
-        self.livesLeft = 5
+        self.livesLeft = livesLeft
         self.platformUnderneath = None
         self.enemyUnderneath = None
     
-    ####################################
-    # Movement methods
-    ####################################
-    
-    # returns True if Player is on a platform or otherPlayer head
-    # used to check whether to fall off platform while walking
-    # helper for step()
-    def checkIfOnPlatform(self, platforms, otherPlayer):
-        # check if Player is on a platform
-        for platform in platforms:
-            if (platform.x0 <= self.x <= platform.x1 and
-                self.y == self.app.floorLevel - platform.height):
-                return True
-
-        # check if Player is on otherPlayer's head
-        if (self.y == otherPlayer.y1):
-            if (otherPlayer.x0 <= self.x0 <= otherPlayer.x1 or 
-                otherPlayer.x0 <= self.x1 <= otherPlayer.x1):
-                return True
+    # updates x direction
+    def updateX(self):
+        keys = pg.key.get_pressed()
+        if keys[pg.K_LEFT]:
+            if self.pos.x - playerWidth / 2 > edgeLimit:
+                self.acc.x = -playerAcc
+            else: # cannot go farther than the edgeLimit
+                self.vel.x = 0
+                self.acc.x = 0
+        if keys[pg.K_RIGHT]:
+            self.acc.x = playerAcc
         
-        return False
+        # apply friction to control maximum speed and inertia
+        self.acc.x += self.vel.x * playerFriction
+
+        if self.pos.x > self.game.playerMaxX:
+            self.game.playerMaxX = self.pos.x
+
+        if abs(self.vel.x) > 0.3:
+            self.isRunning = True
+        else:
+            self.isRunning = False
+
+    # returns lowest platform top to land on or -1 if none available
+    def checkIfOnPlatform(self):
+        lowest = -1
+        for plat in self.game.platforms:
+            if (plat.rect.left < self.rect.left + playerFeetX < plat.rect.right or
+                plat.rect.left < self.rect.right - playerFeetX < plat.rect.right):
+                if plat.rect.bottom >= self.rect.bottom >= plat.rect.top:
+                    if plat.rect.top > lowest:
+                        lowest = plat.rect.top
+        return lowest
     
-    # increment x coordinate while walking
-    def step(self, walkSpeed, platforms, otherPlayer):
-        # going to next sprite image is taken care of in child class step()
+    # returns otherPlayer top to land on, otherwise returns -1
+    def checkIfOnOtherPlayer(self, collisionSetOff):
+        if self.name == self.game.currPlayer.name:
+            other = self.game.otherPlayer
+        else:
+            other = self.game.currPlayer
+        if (self.rect.left < other.rect.left + playerFeetX < self.rect.right or 
+            self.rect.left < other.rect.right - playerFeetX < self.rect.right):
+            if 0 < self.rect.bottom - other.rect.top <= collisionSetOff:
+                return other.rect.top
+        return -1
 
-        # update currPlayer's position
-        if (self.x - (self.width / 2) + walkSpeed > 0):
-            # cannot walk to the left of the starting position
-            self.x += walkSpeed
-            self.x0 += walkSpeed
-            self.x1 += walkSpeed
-            if (self.x > Player.maxX): # update maxX
-                Player.maxX = self.x
+    # returns floorLevel to jump on, otherwise returns -1
+    def checkIfOnFloor(self):
+        if self.rect.bottom >= floorLevel:
+            return floorLevel
+        return -1
 
-        # get the correct sprite image list
-        if (walkSpeed < 0): # moving left
-            self.spritesCurrDir = self.spritesLeft
-        elif (walkSpeed > 0): # moving right
+    # returns Enemy top to land on, otherwise returns -1
+    def checkIfOnEnemy(self, collisionSetOff):
+        for enemy in self.game.enemies:
+            if (self.rect.left < enemy.rect.left + playerFeetX < self.rect.right or 
+                self.rect.left < enemy.rect.right - playerFeetX < self.rect.right):
+                if 0 < self.rect.bottom - enemy.rect.top <= collisionSetOff:
+                    return (enemy, enemy.rect.top)
+        return (None, -1)
+
+    # updates y direction
+    def updateY(self):
+        # stop falling only if Player is on a platform or floor
+        if self.vel.y > 0:
+            # land on platform, otherPlayer's head, floor, or enemy's head
+            self.rect.y += playerCollisionSetOff
+            platCollision = self.checkIfOnPlatform()
+            otherPlayerCollision = self.checkIfOnOtherPlayer(playerCollisionSetOff)
+            floorCollision = self.checkIfOnFloor()
+            (enemy, enemyCollision) = self.checkIfOnEnemy(playerCollisionSetOff)
+            self.rect.y -= playerCollisionSetOff
+
+            # stop falling if Player is on a platform or floor
+            newPosY = max(platCollision, otherPlayerCollision, floorCollision, enemyCollision)
+            if newPosY != -1:
+                self.pos.y = newPosY
+                self.vel.y = 0
+            if newPosY == enemyCollision and enemy != None and self.name == 'Giant Panda':
+                self.game.score += enemy.die()
+                self.game.enemies.remove(enemy)
+
+        if self.vel.y == 0:
+            self.isInAir = False
+        else:
+            self.isInAir = True
+    
+    # updates current image of sprite
+    def updateImage(self):
+        # set direction of sprites
+        if self.vel.x > 0:
             self.spritesCurrDir = self.spritesRight
+        elif self.vel.x < 0:
+            self.spritesCurrDir = self.spritesLeft
 
-        # check if walking off the edge
-        if (self.y != self.app.floorLevel):
-            # if the currPlayer is not on a platform
-            self.isFalling = not self.checkIfOnPlatform(platforms, otherPlayer)
-    
-    # increment y coordinate up during the jump
+        # change sprite counter if not standing or in air
+        if self.isRunning and not self.isInAir:
+            # self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
+            self.spriteCounter = (1 + self.spriteCounter) % (playerRepeatSprite * playerNumSprites)
+            spriteNum = self.spriteCounter // playerRepeatSprite
+        else:
+            spriteNum = self.spriteStanding
+            self.spriteCounter = spriteNum * playerRepeatSprite
+        self.image = self.spritesCurrDir[spriteNum]
+
+    # updates movement
+    # physics in following function derived from: https://youtu.be/8LRI0RLKyt0
+    def update(self):
+        self.acc = vec(0, playerGravity) # implement gravity
+        if self.game.currPlayer.name == self.name:
+            self.updateX()
+        # kinematic equations
+        self.vel += self.acc
+        self.pos += self.vel + 0.5 * self.acc
+        # self.rect.midbottom = self.pos
+        self.updateY()
+        self.rect.midbottom = self.pos
+        if self.game.currPlayer.name == self.name:
+            self.checkCandyCollisions()
+        self.updateImage()
+
+    # sets velocity in both directions and x acceleration to 0
+    def stop(self):
+        self.vel.x = 0
+        self.vel.y = 0
+        self.acc = vec(0, playerGravity)
+        self.isRunning = False
+        self.isInAir = False
+
+    # sets upward velocity for jump
     def jump(self):
-        if (self.reachedTopOfJump == False): 
-            # jump up
-            if (self.y > self.jumpStartingHeight - self.jumpHeight): 
-                # has not reached top of jump
-                # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
-                dy = 0.6 * (self.jumpSpeed ** 2) # parabolic jumping
-                # print('jump', self.y, dy, self.jumpSpeed)
-                self.y -= dy
-                self.y0 -= dy
-                self.y1 -= dy
-                self.jumpSpeed -= 1
-            else:
-                # reached top of jump
-                self.reachedTopOfJump = True
-                self.y = self.jumpStartingHeight - self.jumpHeight
-        else: 
-            # start to fall back down
-            self.isJumping = False
-            self.fallSpeed = self.jumpSpeed + 1
-            self.jumpSpeed = 7 # reset
-            self.isFalling = True
-            self.reachedTopOfJump = False
-    
-    # increment y coordinate down during fall
-    def fall(self, goalHeight):
-        # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
-        dy = 0.5 * (self.fallSpeed ** 2) # parabolic jumping
-        if (abs(self.y - goalHeight) > dy):
-            # has not reached ground
-            # print('fall', self.y, dy, self.fallSpeed)
-            self.y += dy
-            self.y0 += dy
-            self.y1 += dy
-            self.fallSpeed += 1
-        elif (abs(self.y - goalHeight) <= dy): 
-            # reached ground
-            self.y = self.y0 = goalHeight
-            # print('fall', self.y, dy, self.jumpSpeed)
-            self.y1 = goalHeight - self.height
-            self.isFalling = False
-            self.fallSpeed = 0 # reset
+        # jump only if Player is standing on a platform, otherPlayer's head, floor, or enemy's head
+        self.rect.y += 1
+        platCollision = self.checkIfOnPlatform()
+        otherPlayerCollision = self.checkIfOnOtherPlayer(1)
+        floorCollision = self.checkIfOnFloor()
+        enemyCollision = -1
+        if self.name == 'Red Panda':
+            (enemy, enemyCollision) = self.checkIfOnEnemy(1)
+        self.rect.y -= 1
+        if (platCollision != -1 or 
+            otherPlayerCollision != -1 or 
+            floorCollision != -1 or
+            enemyCollision != -1):
+            self.vel.y = -playerJumpVel
 
-# one of the players is giant panda
+    # check for collision with candy and eat it if there is 
+    def checkCandyCollisions(self):
+        for candy in self.game.candies:
+            collision = pg.sprite.collide_rect(candy, self)
+            if collision:
+                if (candy.candyType == 'Fried Rice' and 
+                    self.name == self.game.giantPanda.name):
+                    # only RedPanda can eat fried rice
+                    continue
+                self.game.score += candy.scoreGain
+                self.game.candies.remove(candy)
+
+    def draw(self):
+        self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
+
 class GiantPanda(Player):
-    def __init__(self, name, app):
+    def __init__(self, name, game):
+        super().__init__(game)
         self.name = name
-        self.app = app
-
-        # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
-        self.spritesRight = [self.app.loadImage('images/gp/gp-rspr1.png'),
-                             self.app.loadImage('images/gp/gp-rspr2.png'),
-                             self.app.loadImage('images/gp/gp-rspr3.png'),
-                             self.app.loadImage('images/gp/gp-rspr4.png'),
-                             self.app.loadImage('images/gp/gp-rspr5.png'),
-                             self.app.loadImage('images/gp/gp-rspr6.png')]
-        self.spritesLeft =  [self.app.loadImage('images/gp/gp-lspr1.png'),
-                             self.app.loadImage('images/gp/gp-lspr2.png'),
-                             self.app.loadImage('images/gp/gp-lspr3.png'),
-                             self.app.loadImage('images/gp/gp-lspr4.png'),
-                             self.app.loadImage('images/gp/gp-lspr5.png'),
-                             self.app.loadImage('images/gp/gp-lspr6.png')]
-        self.spritesCurrDir = self.spritesRight
+        self.getSpriteImages()
+        self.image = self.spritesCurrDir[self.spriteStanding]
+        self.rect = self.image.get_rect()
 
         # starting position
-        self.x = 250
-        self.y = 475 # 475 is floorLevel, y is anchored south in view
-
-        # corners of body
-        self.x0 = self.x - self.width / 2
-        self.x1 = self.x + self.width / 2
-        self.y0 = self.y
-        self.y1 = self.y - self.height
-        
-        super().__init__(app)
+        self.rect.centerx = self.pos.x = gpStartingX
+        self.rect.bottom = self.pos.y = floorLevel
 
         # GiantPanda specific ability: killing enemies
         self.canKill = True
         self.enemyUnderneath = None
     
-    # wrapper for step function
-    def step(self, walkSpeed, platforms, otherPlayer):
-        super().step(walkSpeed, platforms, otherPlayer)
-
-        # go to next sprite image
-        if (not self.isJumping and not self.isFalling):
-            self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
-    
-    # wrapper for fall function: giantPanda can kill enemy during fall
-    def fall(self, goalHeight, enemies):
-        super().fall(goalHeight)
-        # when giant panda lands on the enemy, kill it
-        if (self.enemyUnderneath != None):
-            if self.canKill:
-                self.app.score += self.enemyUnderneath.die()
-                self.canKill = False
-                enemies.remove(self.enemyUnderneath)
-                self.enemyUnderneath.platform.enemiesOn.remove(self.enemyUnderneath)
-                self.enemyUnderneath = None
-                self.isFalling = True
-        else:
-            # can only kill once per time on enemy's head
-            self.canKill = True
-
-    def __eq__(self, other):
-        return (isinstance(other, GiantPanda) and (self.name == other.name))
-
-# the other player is red panda
-class RedPanda(Player):
-    def __init__(self, name, app):
-        self.name = name
-        self.app = app
-
-        # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
-        self.spritesRight = [self.app.loadImage('images/rp/rp-rspr1.png'),
-                             self.app.loadImage('images/rp/rp-rspr2.png'),
-                             self.app.loadImage('images/rp/rp-rspr3.png'),
-                             self.app.loadImage('images/rp/rp-rspr4.png'),
-                             self.app.loadImage('images/rp/rp-rspr5.png'),
-                             self.app.loadImage('images/rp/rp-rspr6.png')]
-        self.spritesLeft =  [self.app.loadImage('images/rp/rp-lspr1.png'),
-                             self.app.loadImage('images/rp/rp-lspr2.png'),
-                             self.app.loadImage('images/rp/rp-lspr3.png'),
-                             self.app.loadImage('images/rp/rp-lspr4.png'),
-                             self.app.loadImage('images/rp/rp-lspr5.png'),
-                             self.app.loadImage('images/rp/rp-lspr6.png')]
+    def getSpriteImages(self):
+        self.spriteCounter = 3
+        self.spriteStanding = 3
+        self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr6.png')).convert()]
+        self.spritesLeft =  [pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr6.png')).convert()]
+        #self.image.set_colorkey(black) # ignore black around the image in the rect
         self.spritesCurrDir = self.spritesRight
 
+class RedPanda(Player):
+    def __init__(self, name, game):
+        super().__init__(game)
+        self.name = name
+        self.getSpriteImages()
+        self.image = self.spritesCurrDir[self.spriteStanding]
+        self.rect = self.image.get_rect()
+
         # starting position
-        self.x = 180 # default otherPlayer is set back from currPlayer
-        self.y = 475 # 475 is floorLevel, y is anchored south in view
-
-        # corners of body
-        self.x0 = self.x - self.width / 2
-        self.x1 = self.x + self.width / 2
-        self.y0 = self.y
-        self.y1 = self.y - self.height
-
-        super().__init__(app)
+        self.rect.centerx = self.pos.x = rpStartingX
+        self.rect.bottom = self.pos.y = floorLevel
 
         # RedPanda specific ability: climbing
         self.climbSpeed = 10
         self.isClimbingUp = False
         self.isClimbingDown = False
+        self.isAtBamboo = False
+
         self.isOnBamboo = False
-        self.isJumpingOffBambooRight = False
-        self.isJumpingOffBambooLeft = False
-        self.currBamboo = None
-    
-    # wrapper for step function
-    def step(self, walkSpeed, platforms, otherPlayer):
-        super().step(walkSpeed, platforms, otherPlayer)
-
-        # go to next sprite image
-        if (not self.isJumping and not self.isFalling and 
-            not self.isJumpingOffBambooRight and
-            not self.isJumpingOffBambooLeft):
-            self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
-
-    # wrapper for fall function: redPanda cannot kill enemy during fall
-    def fall(self, goalHeight, enemies):
-        super().fall(goalHeight)
-
-    # returns True if redPanda is at a bamboo
-    def atBamboo(self, bamboos):
-        for bamboo in bamboos:
-            x0 = bamboo.x - bamboo.width / 2
-            x1 = bamboo.x + bamboo.width / 2
-            if (x0  <= self.x <= x1):
-                return bamboo
-        return None
-    
-    # increment climb up
-    def climbUp(self):
-        # cannot past top of screen
-        if (self.y - self.height - self.climbSpeed > 0):
-            self.y -= self.climbSpeed
-            self.y0 -= self.climbSpeed
-            self.y1 -= self.climbSpeed
-                
-        # go to next sprite image
-        self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
-    
-    # increment climb down
-    def climbDown(self):
-        # cannot climb down past bottom of bamboo
-        if (self.currPlayer.y - self.currBamboo.startingHeight + self.climbSpeed <= 0):
-            self.y += self.climbSpeed
-            self.y0 += self.climbSpeed
-            self.y1 += self.climbSpeed
-        else: # reached floor
-            self.spritesCurrDir = self.spritesRight
-            self.isClimbingDown = False 
-            self.isOnBamboo = False
-            self.currBamboo = None
-                
-        # go to next sprite image
-        self.currPlayer.spriteCounter = (1 + self.currPlayer.spriteCounter) % len(self.currPlayer.spritesCurrDir)
-    
-    # increment jumping off bamboo left or right
-    def jumpOffBamboo(self, walkSpeed):
-        # reset values
-        self.isClimbingUp = False
-        self.isClimbingDown = False
-        self.isOnBamboo = False
+        self.isInAirOffBambooRight = False
+        self.isInAirOffBambooLeft = False
         self.currBamboo = None
 
-        # increment step
-        if (self.x - (self.width / 2) + walkSpeed > 0):
-            # cannot walk to the left of the starting position
-            self.x += walkSpeed
-            self.x0 += walkSpeed
-            self.x1 += walkSpeed
-            if (self.x > Player.maxX): # update maxX
-                self.maxX = self.x
+    def getSpriteImages(self):
+        self.spriteCounter = 3
+        self.spriteStanding = 3
+        self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr6.png')).convert()]
+        self.spritesLeft =  [pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr6.png')).convert()]
+        #self.image.set_colorkey(black) # ignore black around the image in the rect
+        self.spritesCurrDir = self.spritesRight
+        self.image = self.spritesCurrDir[self.spriteStanding]
 
-        # get the correct sprite direction list
-        if (walkSpeed < 0): # moving left
-            self.spritesCurrDir = self.spritesLeft
-        elif (walkSpeed > 0): # moving right
-            self.spritesCurrDir = self.spritesRight
+    def update(self):
+        if not self.isAtBamboo:
+            super().update()
+        else:
+            self.climb()
 
-        # increment jump
-        if (self.reachedTopOfJump == False): # jump up
-            if (self.y > self.jumpStartingHeight - self.jumpHeight):
-                # has not reached top of jump
-                # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
-                dy = 0.6 * (self.jumpSpeed ** 2) # parabolic jumping
-                # print('jump', self.y, dy, self.jumpSpeed)
-                self.y -= dy
-                self.y0 -= dy
-                self.y1 -= dy
-                self.jumpSpeed -= 1
-            else:
-                self.y = self.jumpStartingHeight - self.jumpHeight
-                self.fallSpeed = self.jumpSpeed + 1
-                self.jumpSpeed = 7 # reset
-                self.reachedTopOfJump = True
-        else: # reached top of jump
-            goalHeight = self.app.findGoalHeight(self)
-            # following formula is derived from: https://www.techwithtim.net/tutorials/game-development-with-python/pygame-tutorial/jumping/
-            dy = 0.5 * (self.fallSpeed ** 2) # parabolic jumping
-            if (abs(self.y - goalHeight) > dy):
-                # has not reached ground
-                # print('fall', self.y, dy, self.fallSpeed)
-                self.y += dy
-                self.y0 += dy
-                self.y1 += dy
-                self.fallSpeed += 1
-            elif (abs(self.y - goalHeight) <= dy): # reached ground
-                self.y = self.y0 = goalHeight
-                # print('fall', self.y, dy, self.jumpSpeed)
-                self.y1 = goalHeight - self.height
-                self.reachedTopOfJump = False
-                self.isJumpingOffBambooRight = False
-                self.isJumpingOffBambooLeft = False
-                self.fallSpeed = 0 # reset
-                return
+    def atBamboo(self):
+        for bamboo in self.game.bamboos:
+            if (bamboo.rect.left <= self.rect.centerx <= bamboo.rect.right):
+                self.isAtBamboo = True
+                return True
+        self.isAtBamboo = False
+        return False
 
-    def __eq__(self, other):
-        return (isinstance(other, RedPanda) and (self.name == other.name))
+    def climb(self):
+        keys = pg.key.get_pressed()
+        if keys[pg.K_UP]:
+            if self.rect.top - playerClimbVel > edgeLimit:
+                self.rect.y -= playerClimbVel
+        if keys[pg.K_DOWN]:
+            if self.rect.bottom + playerClimbVel <= floorLevel:
+                self.rect.y += playerClimbVel
+            else: # reached floor
+                self.rect.bottom = floorLevel
+                self.isAtBamboo = False
+        self.pos.y = self.rect.bottom
+        self.vel.x = 0
+        if keys[pg.K_LEFT] or keys[pg.K_RIGHT]:
+            self.isAtBamboo = False
+            self.vel.y = -playerJumpVel
+            self.acc = vec(0, playerGravity)
+            self.updateX()
+            # kinematic equations
+            self.vel += self.acc
+            self.pos += self.vel + 0.5 * self.acc
+            self.rect.midbottom = self.pos
 
-# enemies cause players to lose lives when they collide or get attacked
-# two types of Enemy: BasicEnemy and ArcherEnemy
-class Enemy(object):
-    width = 50 
-    height = 60
+class Enemy(pg.sprite.Sprite):
+    def __init__(self, game, platform):
+        pg.sprite.Sprite.__init__(self)
+        self.game = game
 
-    def __init__(self, platform, app):
-        self.walkSpeed = 5
-        self.spriteCounter = 0
+        self.pos = vec(0, floorLevel)
+        self.vel = vec(enemyWalkVel, 0)
 
         # Enemy is on a platform
         self.platform = platform
-        self.maxLeft = platform.x0 + Enemy.width / 2
-        self.maxRight = platform.x1 - Enemy.width / 2
+        self.maxLeft = platform.rect.left + enemyWidth / 2
+        self.maxRight = platform.rect.right - enemyWidth / 2
 
         # starting position
-        self.x = random.randint(self.maxLeft, self.maxRight)
-        self.y = app.floorLevel - platform.height
-        self.collidingWithPlayers = False
-
-        # corners of body
-        self.x0 = self.x - self.width / 2
-        self.x1 = self.x + self.width / 2
-        self.y0 = self.y
-        self.y1 = self.y - self.height
+        self.pos.x = random.randint(self.maxLeft, self.maxRight)
+        self.pos.y = platform.rect.top
 
         self.collidingWithGP = False
         self.collidingWithRP = False
 
-    # following function derived from https://www.cs.cmu.edu/~112/notes/notes-animations-part3.html
-    def getSprites(self, spritesheet, spriteY0, spriteY1):
-        # get sprites from one spritesheet
-        spritesInDir = [ ]
-        for i in range(4):
-            spriteWidth = 350 # based on image at url
-            spriteSheetMargin = 50 # based on image at url
-            spriteSheetWidth, spriteSheetHeight = spritesheet.size
-            sprite = spritesheet.crop((spriteSheetMargin+spriteSheetWidth/4*i, 
-                                       spriteY0, 
-                                       spriteWidth+spriteSheetWidth/4*i, 
-                                       spriteY1))
-            scaleFactor = Enemy.width / spriteWidth
-            sprite = self.app.scaleImage(sprite, scaleFactor)
-            spritesInDir.append(sprite)
-        return spritesInDir
+    # increments step / updates position
+    def autoStep(self):
+        self.pos.x += self.vel.x
 
-    # increment step / update position
-    def autoStepEnemy(self):
-        if (self.spritesCurrDir == self.spritesRight):
-            newX = self.x + self.walkSpeed
-            newX0 = self.x0 + self.walkSpeed
-            newX1 = self.x1 + self.walkSpeed
-        elif (self.spritesCurrDir == self.spritesLeft):
-            newX = self.x - self.walkSpeed
-            newX0 = self.x0 - self.walkSpeed
-            newX1 = self.x1 - self.walkSpeed
-        
-        if (newX < self.maxLeft): 
+        if self.pos.x < self.maxLeft: 
             # too far off left
             self.spritesCurrDir = self.spritesRight
-            self.x = self.maxLeft
-        elif (newX > self.maxRight): 
+            self.pos.x = self.maxLeft
+            self.vel.x = +enemyWalkVel
+        elif self.pos.x > self.maxRight: 
             # too far off right
             self.spritesCurrDir = self.spritesLeft
-            self.x = self.maxRight
-        else:
-            self.x = newX
-            self.x0 = newX0
-            self.x1 = newX1
+            self.pos.x = self.maxRight
+            self.vel.x = -enemyWalkVel
+        
+        self.rect.centerx = self.pos.x
 
-        # go to next sprite image
-        self.spriteCounter = (1 + self.spriteCounter) % len(self.spritesCurrDir)
+    # check if Enemy is colliding with Players
+    def checkPlayerCollisions(self):
+        for player in [self.game.currPlayer, self.game.otherPlayer]:
+            # cannot lose life from jumping on enemy head
+            if not (player.rect.bottom == self.rect.top): 
+                # check for collision
+                player.rect.left += playerFeetX
+                player.rect.right -= playerFeetX
+                collision = pg.sprite.collide_rect(self, player)
+                player.rect.left -= playerFeetX
+                player.rect.right += playerFeetX
+                if collision:
+                    if (player.name == 'Giant Panda'):
+                        self.collidingWithGP = True
+                    if (player.name == 'Red Panda'):
+                        self.collidingWithRP = True
+                else: # finish colliding
+                    if (self.collidingWithGP and player.name == 'Giant Panda'):
+                        self.collidingWithGP = False
+                        player.livesLeft -= 1
+                    if (self.collidingWithRP and player.name == 'Red Panda'):
+                        self.collidingWithRP = False
+                        player.livesLeft -= 1
 
-    # when the GiantPanda kills the enemy, it gains points from the enemy
+    # when the GiantPanda kills the Enemy, it gains points from the Enemy
     def die(self):
         return self.scoreGain
 
-    # check if the enemy is colliding with given player
-    def checkCollisions(self, player):
-        playerX0 = player.x0 + 5 # leeway
-        playerX1 = player.x1 - 5
+    def draw(self):
+        self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
 
-        if not (player.y0 <= self.y1): # cannot lose life from jumping on enemy head
-            if (self.y1 <= player.y1 < self.y0 and
-                (self.x0 <= playerX1 <= self.x1 or self.x0 <= playerX0 <= self.x1)):
-                if (player.name == 'Giant Panda'):
-                    self.collidingWithGP = True
-                if (player.name == 'Red Panda'):
-                    self.collidingWithRP = True
-            else: # finish colliding
-                if (self.collidingWithGP and player.name == 'Giant Panda'):
-                    self.collidingWithGP = False
-                    return True
-                if (self.collidingWithRP and player.name == 'Red Panda'):
-                    self.collidingWithRP = False
-                    return True
-        return False
-
-# BasicEnemy wanders on a platform and can walk towards the player
 class BasicEnemy(Enemy):
-    def __init__(self, platform, app):
-        super().__init__(platform, app)
+    def __init__(self, game, platform):
+        super().__init__(game, platform)
         self.name = 'Basic Enemy'
-        self.app = app
         self.scoreGain = 250
 
-        # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
-        # self.spritesRight = [self.app.loadImage('images/be-rspr1.png'),
-        #                          self.app.loadImage('images/be-rspr2.png'),
-        #                          self.app.loadImage('images/be-rspr3.png'),
-        #                          self.app.loadImage('images/be-rspr4.png'),
-        #                          self.app.loadImage('images/be-rspr5.png'),
-        #                          self.app.loadImage('images/be-rspr6.png')]
-        # self.spritesLeft =  [self.app.loadImage('images/be-lspr1.png'),
-        #                          self.app.loadImage('images/be-lspr2.png'),
-        #                          self.app.loadImage('images/be-lspr3.png'),
-        #                          self.app.loadImage('images/be-lspr4.png'),
-        #                          self.app.loadImage('images/be-lspr5.png'),
-        #                          self.app.loadImage('images/be-lspr6.png')]
-        # self.spritesCurrDir = self.spritesRight
-        spritesheet = self.app.loadImage('images/basicenemysprites.png')
-        spriteHeight = 420 # based on image at url
-        self.spritesRight = self.getSprites(spritesheet, 1900, 1900 + spriteHeight)
-        self.spritesLeft = self.getSprites(spritesheet, 1300, 1300 + spriteHeight)
+        self.getSpriteImages()
+        self.image = self.spritesCurrDir[self.spriteStanding]
+        self.rect = self.image.get_rect()
+
+        # starting position
+        self.rect.centerx = self.pos.x
+        self.rect.bottom = self.pos.y
+
+    def getSpriteImages(self):
+        self.spriteCounter = 3
+        self.spriteStanding = 3
+        self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr6.png')).convert()]
+        self.spritesLeft =  [pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr6.png')).convert()]
+        #self.image.set_colorkey(black) # ignore black around the image in the rect
         self.spritesCurrDir = self.spritesRight
 
-    # increment step / update position
+    # increments step / updates position
     # BasicEnemy can walk towards player if it is on the same platform
     # and the score is high
-    def autoStepEnemy(self):
-        if (self.app.score >= 10000):
-            for player in [self.app.currPlayer, self.app.otherPlayer]:
-                if (self.y0 > player.y >= self.y1 and
-                    (self.platform.x0 <= player.x0 < self.platform.x1 or
-                     self.platform.x0 < player.x1 <= self.platform.x1)):
+    def autoStep(self):
+        if (self.game.score >= 10000):
+            for player in [self.game.currPlayer, self.game.otherPlayer]:
+                if (self.rect.top < player.rect.bottom <= self.rect.bottom and
+                    (self.platform.rect.left <= player.rect.left < self.platform.rect.right or
+                     self.platform.rect.left < player.rect.right <= self.platform.rect.left)):
                     # close enough to player
-                    if (player.x + player.width < self.x):
-                        self.spritesCurrDir = self.spritesLeft
+                    if (player.rect.centerx + playerWidth < self.rect.centerx):
+                        self.vel.x = -enemyWalkVel
                         continue
-                    elif (player.x - player.width > self.x):
-                        self.spritesCurrDir = self.spritesRight
+                    elif (player.rect.centerx - playerWidth > self.rect.centerx):
+                        self.vel.x = +enemyWalkVel
                         continue
         
-        super().autoStepEnemy()
+        super().autoStep()
 
-    def __eq__(self, other):
-        return (isinstance(other, BasicEnemy) and (self.x == other.x) and (self.y == other.y))
+    # updates current image of sprite
+    def updateImage(self):
+        # set direction of sprites
+        if self.vel.x > 0:
+            self.spritesCurrDir = self.spritesRight
+        elif self.vel.x < 0:
+            self.spritesCurrDir = self.spritesLeft
 
-    def __repr__(self):
-        return f'{self.name} at ({self.x}, {self.y})'
+        # change sprite counter if not standing or shooting
+        if self.vel.x != 0:
+            self.spriteCounter = (1 + self.spriteCounter) % (enemyRepeatSprite * enemyNumSprites)
+            spriteNum = self.spriteCounter // enemyRepeatSprite
+        else:
+            spriteNum = self.spriteStanding
+            self.spriteCounter = spriteNum * enemyRepeatSprite
+        self.image = self.spritesCurrDir[spriteNum]
 
-# ArcherEnemy wanders and attacks using Weapon
+    def update(self):
+        self.autoStep()
+        self.updateImage()
+        self.checkPlayerCollisions()
+
 class ArcherEnemy(Enemy):
-    def __init__(self, platform, app):
-        super().__init__(platform, app)
+    def __init__(self, game, platform):
+        super().__init__(game, platform)
         self.name = 'Archer Enemy'
-        self.app = app
         self.scoreGain = 300
 
-        # following pictures adapted from: https://www.coolmathgames.com/0-double-panda
-        # self.spritesRight = [self.app.loadImage('images/ae-rspr1.png'),
-        #                          self.app.loadImage('images/ae-rspr2.png'),
-        #                          self.app.loadImage('images/ae-rspr3.png'),
-        #                          self.app.loadImage('images/ae-rspr4.png'),
-        #                          self.app.loadImage('images/ae-rspr5.png'),
-        #                          self.app.loadImage('images/ae-rspr6.png')]
-        # self.spritesLeft =  [self.app.loadImage('images/ae-lspr1.png'),
-        #                          self.app.loadImage('images/ae-lspr2.png'),
-        #                          self.app.loadImage('images/ae-lspr3.png'),
-        #                          self.app.loadImage('images/ae-lspr4.png'),
-        #                          self.app.loadImage('images/ae-lspr5.png'),
-        #                          self.app.loadImage('images/ae-lspr6.png')]
-        # self.spritesCurrDir = self.spritesRight
-        spritesheet = self.app.loadImage('images/archerenemysprites.png')
-        spriteHeight = 420 # based on image at url
-        self.spritesRight = self.getSprites(spritesheet, 1900, 1900 + spriteHeight)
-        self.spritesLeft = self.getSprites(spritesheet, 1300, 1300 + spriteHeight)
-        self.spritesCurrDir = self.spritesRight
+        self.getSpriteImages()
+        self.image = self.spritesCurrDir[self.spriteStanding]
+        self.rect = self.image.get_rect()
+
+        # starting position
+        self.rect.centerx = self.pos.x
+        self.rect.bottom = self.pos.y
 
         # ArcherEnemy specific ability: shooting
-        self.tempShootingSprite = None
-        self.weapon = Weapon(self.x, self.y - (self.height // 2), self.app)
+        self.weapon = Weapon(game, self)
         self.isShooting = False
         self.shootCount = 0 # can only shoot 3 times at once every 3 seconds
-        self.shootingWaitTime = 3 # seconds
         self.shootingStartWaitTime = 0
 
-    # returns the player that is close enough to shoot at or None otherwise
-    def closeEnoughToShoot(self):
+    def getSpriteImages(self):
+        self.spriteCounter = 3
+        self.spriteStanding = 3
+        self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr6.png')).convert()]
+        self.spritesLeft =  [pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr1.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr2.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr3.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr4.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr5.png')).convert(),
+                             pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr6.png')).convert()]
+        #self.image.set_colorkey(black) # ignore black around the image in the rect
+        self.spritesCurrDir = self.spritesRight
+
+    def autoStep(self):
+        if not self.isShooting:
+            super().autoStep()
+
+    # returns the Player that is close enough to shoot at or None otherwise
+    def checkCloseEnoughToShoot(self):
         # enemy should be at or above the target player
-        if (0 < abs(self.x - self.app.currPlayer.x) < 200 and
-            self.y <= self.app.currPlayer.y):
-            return self.app.currPlayer
-        elif (0 < abs(self.x - self.app.otherPlayer.x) < 200 and
-            self.y <= self.app.otherPlayer.y):
-            return self.app.otherPlayer
+        if (0 < abs(self.rect.centerx - self.game.currPlayer.rect.centerx) < 200 and
+            self.rect.centery <= self.game.currPlayer.rect.centery):
+            return self.game.currPlayer
+        elif (0 < abs(self.rect.centerx - self.game.otherPlayer.rect.centerx) < 200 and
+            self.rect.centery <= self.game.otherPlayer.rect.centery):
+            return self.game.otherPlayer
         return None
 
-    # predict where to shoot
+    # predicts where to shoot
     def predictTarget(self, targetPlayer):
-        # stepping does not change weapon's position, so reset it here
-        self.weapon.x = self.x
-
-        if (self.app.score <= 10000):
-            targetX = targetPlayer.x
-            targetY = targetPlayer.y - targetPlayer.height // 2
-            self.weapon.shootingCalculations(targetX, targetY, targetPlayer)
-        else:
+        if (self.game.score <= 10000):
+            targetX = targetPlayer.rect.centerx
+            targetY = targetPlayer.rect.centery
+        else: # enemy shooting AI
             # speed of weapon increases
             self.weapon.v *= 1.01
-            
+            targetY = targetPlayer.rect.centery
             # targetX changes based on direction of currPlayer
             if (self.currPlayer.isWalkingLeft):
                 if (self.shootCount == 0):
@@ -594,83 +532,143 @@ class ArcherEnemy(Enemy):
             else:
                 targetX = targetPlayer.x
 
-        targetY = targetPlayer.y - targetPlayer.height // 2
         self.weapon.shootingCalculations(targetX, targetY, targetPlayer)
 
-        if (targetX < self.x):
-            self.tempShootingSprite = self.spritesLeft[0]
-        elif (targetX > self.x):
-            self.tempShootingSprite = self.spritesRight[0]
-        else:
-            self.tempShootingSprite = self.spritesCurrDir[self.spriteCounter]
-
-    # increment the weapon's position
-    def incrementShooting(self):
-        weapon = self.weapon
-        newX = weapon.x + weapon.dx
-        newY = weapon.y + weapon.dy
-
-        if (weapon.y > self.app.floorLevel): 
-            # passed through floor
-            self.resetWeapon()
-            self.shootCount += 1
-        elif (abs(weapon.x - self.x) > 400):
-            # passed distance of 400 (went too far)
-            self.resetWeapon()
-            self.shootCount += 1
-        elif (weapon.targetPlayer.x0 <= newX <= weapon.targetPlayer.x1 and
-              weapon.targetPlayer.y0 >= newY >= weapon.targetPlayer.y1):
-            # hit target
-            weapon.targetPlayer.livesLeft -= 1
-            self.resetWeapon()
-            self.shootCount += 1
-        else:
-            # increment position
-            weapon.x = newX
-            weapon.y = newY
-
-    # reset the Weapon and reset boolean
+    # resets the Weapon and reset boolean
     def resetWeapon(self):
         self.isShooting = False
-        self.weapon.reset(self.x, self.y - (self.height // 2))
+        self.weapon.reset()
 
-    def __eq__(self, other):
-        return (isinstance(other, ArcherEnemy) and (self.x == other.x) and (self.y == other.y))
-    
-    def __repr__(self):
-        return f'{self.name} at ({self.x}, {self.y})'
+    def checkShooting(self):
+        if self.shootCount > 2:
+            self.isShooting = False
+            # already shot 3 (maximum) times
+            currTime = pg.time.get_ticks()
+            if self.shootingStartWaitTime == 0:
+                # start waiting before it can shoot again
+                self.shootingStartWaitTime = currTime
+            elif currTime - self.shootingStartWaitTime > enemyShootWaitTime:
+                # reset variables to be able to shoot again
+                self.shootCount = 0
+                self.shootingStartWaitTime = 0
+        else:
+            # has not shot maximum times yet
+            result = self.checkCloseEnoughToShoot()
+            if result != None:
+                # close enough to shoot, start shooting
+                self.isShooting = True
+                self.weapon.setPos(self.rect.centerx, self.rect.centery)
+                self.predictTarget(result)
+                self.weapon.update()
+            else:
+                self.isShooting = False
+                self.shootCount = 0
+                self.resetWeapon()
 
-# ArcherEnemy can use this to attack
-class Weapon(object):
-    def __init__(self, x, y, app):
-        self.x = x
-        self.y = y
-        self.dx = 0
-        self.dy = 0
-        self.v = 13 # shooting speed
+    # updates current image of sprite
+    def updateImage(self):
+        # set direction of sprites
+        if self.isShooting:# or 0 < self.shootCount < 3:
+            # face target while shooting
+            if self.weapon.targetPlayer.pos.x < self.pos.x:
+                self.spritesCurrDir = self.spritesLeft
+            elif self.weapon.targetPlayer.pos.x > self.pos.x:
+                self.spritesCurrDir = self.spritesRight
+        else:
+            if self.vel.x > 0:
+                self.spritesCurrDir = self.spritesRight
+            elif self.vel.x < 0:
+                self.spritesCurrDir = self.spritesLeft
+
+        # change sprite counter if not standing or shooting
+        if self.vel.x != 0 and not self.isShooting:
+            self.spriteCounter = (1 + self.spriteCounter) % (enemyRepeatSprite * enemyNumSprites)
+            spriteNum = self.spriteCounter // enemyRepeatSprite
+        else:
+            spriteNum = self.spriteStanding
+            self.spriteCounter = spriteNum * enemyRepeatSprite
+        self.image = self.spritesCurrDir[spriteNum]
+
+    def update(self):
+        if self.isShooting and self.weapon.pos.x != 0 and self.weapon.pos.y != 0:
+            self.weapon.update()
+        else:
+            self.checkShooting()
+        self.autoStep()
+        self.updateImage()
+        self.checkPlayerCollisions()
+
+    def draw(self):
+        self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
+        if self.isShooting or 0 < self.shootCount <= 2:
+            self.weapon.draw()
+
+class Weapon(pg.sprite.Sprite):
+    def __init__(self, game, enemy):
+        pg.sprite.Sprite.__init__(self)
+        self.game = game
+
+        self.image = pg.Surface((10, 10))
+        self.image.fill(white)
+        self.rect = self.image.get_rect()
+        self.rect.x = 0
+        self.rect.y = 0
+
+        self.pos = vec(0, 0)
+        self.vel = vec(0, 0)
+        self.enemy = enemy
 
         # target position
-        self.xt = 0
-        self.yt = 0
+        self.targetX = 0
+        self.targetY = 0
         self.targetPlayer = None
 
     # determine the dx and dy needed to increment the Weapon towards the target
-    def shootingCalculations(self, xt, yt, player):
-        self.xt = xt
-        self.yt = yt
+    def shootingCalculations(self, targetX, targetY, player):
+        self.targetX = targetX
+        self.targetY = targetY
         self.targetPlayer = player
-        distX = xt - self.x
-        distY = yt - self.y
+        distX = self.targetX - self.rect.centerx
+        distY = self.targetY - self.rect.centery
         distance = ((distX) ** 2 + (distY) ** 2) ** 0.5
         if (distance > 0):
             angle = math.acos(distX / distance)
-        self.dx = self.v * math.cos(angle)
-        self.dy = self.v * math.sin(angle)
-    
-    # reset the Weapon to default values
-    def reset(self, x, y):
-        self.x = x
-        self.y = y
-        self.dx = 0
-        self.dy = 0
-        self.targetPlayer = None
+        self.vel.x = enemyShootVel * math.cos(angle)
+        self.vel.y = enemyShootVel * math.sin(angle)
+
+    def setPos(self, x, y):
+        self.pos.x = self.rect.centerx = x
+        self.pos.y = self.rect.centery = y
+
+    def reset(self):
+        self.setPos(0, 0)
+        self.vel.x = 0
+        self.vel.y = 0
+        # self.targetPlayer = None
+        # self.enemy.isShooting = False
+
+    def update(self):
+        self.pos.x += self.vel.x
+        self.pos.y += self.vel.y
+
+        if self.pos.y > floorLevel:
+            # passed through floor
+            self.reset()
+            self.enemy.shootCount += 1
+        elif abs(self.pos.x - self.enemy.pos.x) > 400:
+            # passed distance of 400 (went too far)
+            self.reset()
+            self.enemy.shootCount += 1
+        else:
+            # collided with targetPlayer
+            collision = pg.sprite.collide_rect(self, self.targetPlayer)
+            if collision:
+                self.targetPlayer.livesLeft -= 1
+                self.reset()
+                self.enemy.shootCount += 1
+
+        self.rect.centerx = self.pos.x
+        self.rect.centery = self.pos.y
+
+    def draw(self):
+        self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))

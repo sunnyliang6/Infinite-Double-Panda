@@ -20,6 +20,7 @@ import pygame as pg
 from settings import *
 vec = pg.math.Vector2
 
+# user controls Players
 class Player(pg.sprite.Sprite):
     def __init__(self, game):
         pg.sprite.Sprite.__init__(self)
@@ -169,12 +170,14 @@ class Player(pg.sprite.Sprite):
     # sets upward velocity for jump
     def jump(self):
         # jump only if Player is standing on a platform, otherPlayer's head, floor, or enemy's head
+        # following 'algorithm' derived from: https://youtu.be/9S7fWevICtY
         self.rect.y += 1
         platCollision = self.checkIfOnPlatform()
         otherPlayerCollision = self.checkIfOnOtherPlayer(1)
         floorCollision = self.checkIfOnFloor()
         enemyCollision = -1
         if self.name == 'Red Panda':
+            # RedPanda can jump while on an Enemy
             (enemy, enemyCollision) = self.checkIfOnEnemy(1)
         self.rect.y -= 1
         if (platCollision != -1 or 
@@ -183,7 +186,7 @@ class Player(pg.sprite.Sprite):
             enemyCollision != -1):
             self.vel.y = -playerJumpVel
 
-    # check for collision with candy and eat it if there is 
+    # checks for collision with candy and eat it if there is 
     def checkCandyCollisions(self):
         for candy in self.game.candies:
             collision = pg.sprite.collide_rect(candy, self)
@@ -195,9 +198,12 @@ class Player(pg.sprite.Sprite):
                 self.game.score += candy.scoreGain
                 self.game.candies.remove(candy)
 
+    # draws with appropriate shift
     def draw(self):
         self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
 
+# GiantPanda is a Player that the user can control and has the unique ability
+# of killing Enemies
 class GiantPanda(Player):
     def __init__(self, name, game):
         super().__init__(game)
@@ -214,9 +220,11 @@ class GiantPanda(Player):
         self.canKill = True
         self.enemyUnderneath = None
     
+    # gets images of GiantPanda
     def getSpriteImages(self):
         self.spriteCounter = 3
         self.spriteStanding = 3
+        # following images captured from: https://www.coolmathgames.com/0-double-panda
         self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr1.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr2.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-rspr3.png')).convert(),
@@ -229,9 +237,10 @@ class GiantPanda(Player):
                              pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr4.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr5.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'gp', 'gp-lspr6.png')).convert()]
-        #self.image.set_colorkey(black) # ignore black around the image in the rect
         self.spritesCurrDir = self.spritesRight
 
+# RedPanda is a Player that the user can control and has the unique ability of
+# climbing bamboo
 class RedPanda(Player):
     def __init__(self, name, game):
         super().__init__(game)
@@ -255,9 +264,11 @@ class RedPanda(Player):
         self.isInAirOffBambooLeft = False
         self.currBamboo = None
 
+    # gets images of RedPanda
     def getSpriteImages(self):
         self.spriteCounter = 3
         self.spriteStanding = 3
+        # following images captured from: https://www.coolmathgames.com/0-double-panda
         self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr1.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr2.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-rspr3.png')).convert(),
@@ -270,16 +281,17 @@ class RedPanda(Player):
                              pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr4.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr5.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'rp', 'rp-lspr6.png')).convert()]
-        #self.image.set_colorkey(black) # ignore black around the image in the rect
         self.spritesCurrDir = self.spritesRight
         self.image = self.spritesCurrDir[self.spriteStanding]
 
+    # calls super class update() if not climbing
     def update(self):
         if not self.isAtBamboo:
             super().update()
         else:
             self.climb()
 
+    # returns True if at a bamboo
     def atBamboo(self):
         for bamboo in self.game.bamboos:
             if (bamboo.rect.left <= self.rect.centerx <= bamboo.rect.right):
@@ -288,6 +300,7 @@ class RedPanda(Player):
         self.isAtBamboo = False
         return False
 
+    # updates position while climbing up or down or jumping off a bamboo
     def climb(self):
         keys = pg.key.get_pressed()
         if keys[pg.K_UP]:
@@ -311,6 +324,7 @@ class RedPanda(Player):
             self.pos += self.vel + 0.5 * self.acc
             self.rect.midbottom = self.pos
 
+# Enemy are controlled by the game and causes Player's to lose lives
 class Enemy(pg.sprite.Sprite):
     def __init__(self, game, platform):
         pg.sprite.Sprite.__init__(self)
@@ -376,9 +390,11 @@ class Enemy(pg.sprite.Sprite):
     def die(self):
         return self.scoreGain
 
+    # draws with appropriate shift
     def draw(self):
         self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
 
+# BasicEnemy is an Enemy that wanders a platform
 class BasicEnemy(Enemy):
     def __init__(self, game, platform):
         super().__init__(game, platform)
@@ -393,9 +409,11 @@ class BasicEnemy(Enemy):
         self.rect.centerx = self.pos.x
         self.rect.bottom = self.pos.y
 
+    # gets images of BasicEnemy
     def getSpriteImages(self):
         self.spriteCounter = 3
         self.spriteStanding = 3
+        # following images captured from: https://www.coolmathgames.com/0-double-panda
         self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr1.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr2.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'be', 'be-rspr3.png')).convert(),
@@ -408,12 +426,11 @@ class BasicEnemy(Enemy):
                              pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr4.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr5.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'be', 'be-lspr6.png')).convert()]
-        #self.image.set_colorkey(black) # ignore black around the image in the rect
         self.spritesCurrDir = self.spritesRight
 
     # increments step / updates position
     # BasicEnemy can walk towards player if it is on the same platform
-    # and the score is high
+    # and the score is high (>= 10k)
     def autoStep(self):
         if (self.game.score >= 10000):
             for player in [self.game.currPlayer, self.game.otherPlayer]:
@@ -452,6 +469,7 @@ class BasicEnemy(Enemy):
         self.updateImage()
         self.checkPlayerCollisions()
 
+# ArcherEnemy is an Enemy that wanders a platform and shoots at Players
 class ArcherEnemy(Enemy):
     def __init__(self, game, platform):
         super().__init__(game, platform)
@@ -472,9 +490,11 @@ class ArcherEnemy(Enemy):
         self.shootCount = 0 # can only shoot 3 times at once every 3 seconds
         self.shootingStartWaitTime = 0
 
+    # gets images of ArcherEnemy
     def getSpriteImages(self):
         self.spriteCounter = 3
         self.spriteStanding = 3
+        # following images captured from: https://www.coolmathgames.com/0-double-panda
         self.spritesRight = [pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr1.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr2.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-rspr3.png')).convert(),
@@ -487,7 +507,6 @@ class ArcherEnemy(Enemy):
                              pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr4.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr5.png')).convert(),
                              pg.image.load(os.path.join(imagesFolder, 'ae', 'ae-lspr6.png')).convert()]
-        #self.image.set_colorkey(black) # ignore black around the image in the rect
         self.spritesCurrDir = self.spritesRight
 
     def autoStep(self):
@@ -539,10 +558,11 @@ class ArcherEnemy(Enemy):
         self.isShooting = False
         self.weapon.reset()
 
+    # handles whether ArcherEnemy can shoot 
     def checkShooting(self):
         if self.shootCount > 2:
-            self.isShooting = False
             # already shot 3 (maximum) times
+            self.isShooting = False
             currTime = pg.time.get_ticks()
             if self.shootingStartWaitTime == 0:
                 # start waiting before it can shoot again
@@ -568,7 +588,7 @@ class ArcherEnemy(Enemy):
     # updates current image of sprite
     def updateImage(self):
         # set direction of sprites
-        if self.isShooting:# or 0 < self.shootCount < 3:
+        if self.isShooting:
             # face target while shooting
             if self.weapon.targetPlayer.pos.x < self.pos.x:
                 self.spritesCurrDir = self.spritesLeft
@@ -598,11 +618,13 @@ class ArcherEnemy(Enemy):
         self.updateImage()
         self.checkPlayerCollisions()
 
+    # draws ArcherEnemy and weapon with appropriate shift
     def draw(self):
         self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
         if self.isShooting or 0 < self.shootCount <= 2:
             self.weapon.draw()
 
+# carried by ArcherEnemy and deals damage to Players
 class Weapon(pg.sprite.Sprite):
     def __init__(self, game, enemy):
         pg.sprite.Sprite.__init__(self)
@@ -623,7 +645,7 @@ class Weapon(pg.sprite.Sprite):
         self.targetY = 0
         self.targetPlayer = None
 
-    # determine the dx and dy needed to increment the Weapon towards the target
+    # determines the dx and dy needed to increment the Weapon towards the target
     def shootingCalculations(self, targetX, targetY, player):
         self.targetX = targetX
         self.targetY = targetY
@@ -636,16 +658,16 @@ class Weapon(pg.sprite.Sprite):
         self.vel.x = enemyShootVel * math.cos(angle)
         self.vel.y = enemyShootVel * math.sin(angle)
 
+    # sets current position to given parameters
     def setPos(self, x, y):
         self.pos.x = self.rect.centerx = x
         self.pos.y = self.rect.centery = y
 
+    # resets position to default
     def reset(self):
         self.setPos(0, 0)
         self.vel.x = 0
         self.vel.y = 0
-        # self.targetPlayer = None
-        # self.enemy.isShooting = False
 
     def update(self):
         self.pos.x += self.vel.x
@@ -670,5 +692,6 @@ class Weapon(pg.sprite.Sprite):
         self.rect.centerx = self.pos.x
         self.rect.centery = self.pos.y
 
+    # draws with appropriate shift
     def draw(self):
         self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))

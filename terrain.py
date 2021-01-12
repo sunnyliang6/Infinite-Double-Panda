@@ -16,6 +16,7 @@ import random, os
 import pygame as pg
 from settings import *
 
+# surface for Players, Enemies, and Candy to be on
 class Platform(pg.sprite.Sprite):
     def __init__(self, game, level, x, width):
         pg.sprite.Sprite.__init__(self)
@@ -31,12 +32,15 @@ class Platform(pg.sprite.Sprite):
 
         self.enemiesOn = []
 
+    # adds an Enemy to the platform
     def addEnemy(self, enemy):
         self.enemiesOn.append(enemy)
     
+    # draws with appropriate shift
     def draw(self):
         self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
 
+# contains properties of the Floor that Players can be on
 class Floor(pg.sprite.Sprite):
     def __init__(self, game):
         pg.sprite.Sprite.__init__(self)
@@ -56,11 +60,10 @@ class Floor(pg.sprite.Sprite):
         if image2X < screenWidth:
             self.game.screen.blit(self.image2, (image2X, floorLevel))
 
-# red panda can climb bamboo
+# RedPanda can climb bamboo
 class Bamboo(pg.sprite.Sprite):
     def __init__(self, game, x):
         self.x = x
-        # image = 
         self.game = game
         self.image = pg.Surface((bambooWidth, floorLevel))
         self.image.fill(green)
@@ -70,20 +73,19 @@ class Bamboo(pg.sprite.Sprite):
         self.rect.x = x - bambooWidth // 2
         self.rect.y = 0
     
+    # draws with appropriate shift
     def draw(self):
         self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))
 
-# Candy gives players points
+# Candy gives Players points
 # Candy types: cupcake, pie slice, fortune cookie, fried rice
 class Candy(pg.sprite.Sprite):
     def __init__(self, game, x, y):
         pg.sprite.Sprite.__init__(self)
         self.game = game
-        # self.image = pg.Surface((bambooWidth, floorLevel))
-        # self.image.fill(black) # load image later
         self.setCandyType(x, y)
     
-    # sets candy type, image, and rect
+    # sets candyType, image, and rect
     def setCandyType(self, x, y):
         r = random.randint(0, 100)
         if (r < 70):
@@ -109,17 +111,17 @@ class Candy(pg.sprite.Sprite):
         self.rect.x = x
         self.rect.y = y - self.rect.height # in order to be able to draw it from the upper left hand corner
     
-    # makes the candy into a fried rice
+    # makes the candy into a fried rice that only RedPanda can eat
     def makeIntoFriedRice(self):
         x, y = self.rect.centerx, self.rect.bottom
         self.candyType = 'Fried Rice'
         self.scoreGain = 1000
         # following picture captured from: https://www.coolmathgames.com/0-double-panda
         self.image = pg.image.load(os.path.join(imagesFolder, 'friedrice.png')).convert()
-        # self.image.set_colorkey(BLACK) # ignore black around the image in the rect
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.bottom = y
     
+    # draws with appropriate shift
     def draw(self):
         self.game.screen.blit(self.image, (self.rect.x - self.game.scrollX, self.rect.y))

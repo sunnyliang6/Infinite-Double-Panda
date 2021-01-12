@@ -13,6 +13,8 @@ from characters import *
 from terrain import *
 from settings import *
 
+# Used game framework template from: https://youtu.be/uWvb3QzA48c
+
 class Game(object):
     # initializes game window, etc.
     def __init__(self):
@@ -515,7 +517,7 @@ class Game(object):
         pg.display.flip()
         self.waitForKeyPress()
 
-    # needs citation
+    # following function from: https://youtu.be/BKtiVKNsOYk
     def waitForKeyPress(self):
         waiting = True
         while waiting:
@@ -527,6 +529,7 @@ class Game(object):
                 if event.type == pg.KEYDOWN:
                     waiting = False
 
+    # following function from: https://youtu.be/BKtiVKNsOYk
     def drawText(self, text, size, color, x, y, align):
         font = pg.font.SysFont('helvetica', size)
         surface = font.render(text, True, color)

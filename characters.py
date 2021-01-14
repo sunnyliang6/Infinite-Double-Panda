@@ -388,6 +388,7 @@ class Enemy(pg.sprite.Sprite):
 
     # when the GiantPanda kills the Enemy, it gains points from the Enemy
     def die(self):
+        self.platform.enemiesOn.remove(self)
         return self.scoreGain
 
     # draws with appropriate shift
@@ -526,7 +527,7 @@ class ArcherEnemy(Enemy):
 
     # predicts where to shoot
     def predictTarget(self, targetPlayer):
-        if (self.game.score <= 10000):
+        if (self.game.score >= 0): # <= 100000
             targetX = targetPlayer.rect.centerx
             targetY = targetPlayer.rect.centery
         else: # enemy shooting AI

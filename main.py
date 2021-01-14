@@ -7,13 +7,13 @@
 # This file contains the game loop
 ####################################
 
-import random, os
+import random, os, sqlite3
 import pygame as pg
 from characters import *
 from terrain import *
 from settings import *
 
-# Used game framework template from: https://youtu.be/uWvb3QzA48c
+# used game framework template from: https://youtu.be/uWvb3QzA48c
 
 class Game(object):
     # initializes game window, etc.
@@ -27,6 +27,13 @@ class Game(object):
 
     # starts new game
     def new(self):
+        self.playing = True
+        self.showLoginScreen()
+        if not self.playing:
+            return
+        self.showHelpScreen()
+
+        # brand new game
         self.score = 0
         self.getHelp = False
         self.players = pg.sprite.Group()
@@ -49,8 +56,7 @@ class Game(object):
         self.isSwitching = False
         self.otherPlayerIsOnCurr = False
 
-        # background image is from the original Double Panda game:
-        # https://www.coolmathgames.com/0-double-panda
+        # background image is from the original Double Panda game: https://www.coolmathgames.com/0-double-panda
         self.background = pg.image.load(os.path.join(imagesFolder, 'gamebackground.png')).convert()
 
         self.platforms = []
@@ -58,6 +64,13 @@ class Game(object):
         self.bamboos = []
         self.candies = []
         self.enemies = []
+
+        if self.checkUsernameExists(self.username):
+            # if user has stored data, get and read data into game
+            userData = self.getUserData(self.username)
+            if self.readUserData(userData):
+                # if this is False, no game state data will be read and standard starting terrain will be generated in next lines
+                return
 
         # generate standard starting terrain
         self.startingTerrain()
@@ -76,11 +89,11 @@ class Game(object):
         self.bamboos.append(bamboo1)
 
         # candies
-        candy1 = Candy(self, 650, plat1.rect.top)
-        candy2 = Candy(self, 750, plat3.rect.top)
-        candy3 = Candy(self, 800, plat3.rect.top)
-        candy4 = Candy(self, 850, plat3.rect.top)
-        candy5 = Candy(self, 1300, plat4.rect.top)
+        candy1 = Candy(self, 650, plat1.rect.top, '')
+        candy2 = Candy(self, 750, plat3.rect.top, '')
+        candy3 = Candy(self, 800, plat3.rect.top, '')
+        candy4 = Candy(self, 850, plat3.rect.top, '')
+        candy5 = Candy(self, 1300, plat4.rect.top, '')
         self.candies.extend([candy1, candy2, candy3, candy4, candy5])
 
         # enemies
@@ -94,7 +107,6 @@ class Game(object):
 
     # game loop
     def run(self):
-        self.playing = True
         while self.playing:
             self.clock.tick(fps) # standardizes fps across machines
             self.events()
@@ -116,6 +128,14 @@ class Game(object):
                 if event.key == pg.K_h:
                     self.showHelpScreen()
                     return
+                if event.key == pg.K_s:
+                    self.score += 100000
+                if event.key == pg.K_q:
+                    # save current game state and quit game
+                    self.saveData() 
+                    self.showQuitScreen()
+                    self.playing = False
+                    self.running = False
                 if event.key == pg.K_UP:
                     if self.currPlayer.name == self.redPanda.name:
                         if not self.currPlayer.atBamboo():
@@ -173,6 +193,8 @@ class Game(object):
     # updates attributes
     def update(self):
         if self.giantPanda.livesLeft < 1 or self.redPanda.livesLeft < 1:
+            # game over
+            self.saveOnlyNameScore()
             self.playing = False
         elif self.isSwitching:
             self.switchTransition()
@@ -211,9 +233,9 @@ class Game(object):
 
     # generates a group of platforms with enemies, candy, and a bamboo if necessary
     def generateTerrain(self):
-        # Inspired by https://youtu.be/iQXLQzOaIpE and the 15-112 Game AI TA 
-        # Mini-Lecture to use probabilities (random number). From the video, 
-        # I was also inspired to use a loop to generate 'terrain.'
+        # inspired by https://youtu.be/iQXLQzOaIpE and the 15-112 Game AI TA 
+        # Mini-Lecture to use probabilities (random number)
+        # from the video, I was also inspired to use a loop to generate 'terrain'
 
         # determine where the bottom platform will be
         
@@ -303,9 +325,9 @@ class Game(object):
 
     # generate candy on a given platform
     def generateCandy(self, platform, bottomLevel):
-        # Inspired by https://youtu.be/iQXLQzOaIpE and Game AI TA Mini-Lecture
-        # to use probabilities (random number). From the video, I was also 
-        # inspired to use a loop to generate 'terrain.'
+        # inspired by https://youtu.be/iQXLQzOaIpE and Game AI TA Mini-Lecture
+        # to use probabilities (random number)
+        # from the video, I was also inspired to use a loop to generate 'terrain'
 
         # every platform have candy
 
@@ -322,7 +344,7 @@ class Game(object):
 
         # loop through the length of the platform
         while (x < x1):
-            newCandy = Candy(self, x, platform.rect.top)
+            newCandy = Candy(self, x, platform.rect.top, '')
 
             # decide whether to make fried rice
             if (madeFriedRice == False):
@@ -352,9 +374,9 @@ class Game(object):
 
     # generate enemies on a given platform
     def generateEnemies(self, platform, topLevel):
-        # Inspired by https://youtu.be/iQXLQzOaIpE and Game AI TA Mini-Lecture
-        # to use probabilities (random number). From the video, I was also 
-        # inspired to use a loop to generate 'terrain.'
+        # inspired by https://youtu.be/iQXLQzOaIpE and Game AI TA Mini-Lecture
+        # to use probabilities (random number)
+        # from the video, I was also inspired to use a loop to generate 'terrain'
 
         # probability of this platform having enemy(ies)
         probEnemy = random.randint(0, 100)
@@ -487,6 +509,282 @@ class Game(object):
         # after drawing everything, flip the display
         pg.display.flip()
 
+    ####################################
+    # Data methods
+    ####################################
+
+    # returns True if username exists
+    def checkUsernameExists(self, username):
+        conn = sqlite3.connect('data.db')
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(f'SELECT username FROM userData')
+            result = cursor.fetchall()
+            allUsernames = []
+            for user in result:
+                allUsernames.append(user[0])
+            if username in allUsernames:
+                return True
+            else:
+                return False
+        except:
+            return False
+
+    # returns data of this user
+    def getUserData(self, username):
+        conn = sqlite3.connect('data.db')
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM userData WHERE username = :username", {'username': username})
+        return cursor.fetchall()[0]
+
+    # sets up game attributes using saved user data
+    def readUserData(self, userData):
+        gpLives = int(userData[2])
+        rpLives = int(userData[3])
+        if gpLives < 1 or rpLives < 1:
+            return False
+        self.score = int(userData[1])
+        self.giantPanda.livesLeft = gpLives
+        self.redPanda.livesLeft = rpLives
+        self.giantPanda.pos.x = float(userData[4])
+        self.giantPanda.pos.y = float(userData[5])
+        self.redPanda.pos.x = float(userData[6])
+        self.redPanda.pos.y = float(userData[7])
+        self.giantPanda.rect.centerx = self.giantPanda.pos.x 
+        self.giantPanda.rect.bottom = self.giantPanda.pos.y
+        self.redPanda.rect.centerx = self.redPanda.pos.x 
+        self.redPanda.rect.bottom = self.redPanda.pos.y
+        if userData[8] == self.giantPanda.name:
+            self.currPlayer = self.giantPanda
+        else:
+            self.currPlayer = self.redPanda
+        self.scrollX = int(userData[9])
+
+        platList = userData[10].split(', ')
+        for plat in platList[:-1]:
+            platValues = plat.split(' ')
+            level = float(platValues[0])
+            x = int(platValues[1])
+            width = int(platValues[2])
+            newPlat = Platform(self, level, x, width)
+            self.platforms.append(newPlat)
+            enemies = platValues[3]
+            for i in range(len(enemies)):
+                if enemies[i] == 'b':
+                    newEnemy = BasicEnemy(self, newPlat)
+                elif enemies[i] == 'a':
+                    newEnemy = ArcherEnemy(self, newPlat)
+                self.enemies.append(newEnemy)
+                newPlat.addEnemy(newEnemy)
+
+        bambooList = userData[11].split(', ')
+        for bamboo in bambooList[:-1]:
+            x = int(bamboo)
+            newBamboo = Bamboo(self, x)
+            self.bamboos.append(newBamboo)
+        
+        candyList = userData[12].split(', ')
+        for candy in candyList[:-1]:
+            candyValues = candy.split(' ')
+            x = int(candyValues[0])
+            y = int(candyValues[1])
+            candyType = candyValues[2]
+            newCandy = Candy(self, x, y, candyType)
+            self.candies.append(newCandy)
+
+        return True
+
+    # returns list of scores from all users
+    def getScores(self):
+        conn = sqlite3.connect('data.db')
+        cursor = conn.cursor()
+
+        cursor.execute(f'SELECT {score} FROM {userData}')
+        allScores = []
+        for user in cursor.fetchall():
+            allScores.append(user[0])
+        
+        return allScores
+
+    # returns platform, enemy, bamboo, and candy data in string format
+    def getMyStringData(self):
+        platData = ''
+        for plat in self.platforms:
+            enemyData = ''
+            for enemy in plat.enemiesOn:
+                if enemy.name == 'Basic Enemy':
+                    enemyData += 'b'
+                elif enemy.name == 'Archer Enemy':
+                    enemyData += 'a'
+            platData += f'{plat.level} {plat.rect.x} {plat.rect.width} {enemyData}, '
+        
+        bambooData = ''
+        for bamboo in self.bamboos:
+            bambooData += f'{bamboo.rect.centerx}, '
+        
+        candyData = ''
+        for candy in self.candies:
+            candyData += f'{candy.rect.x} {candy.rect.bottom} {candy.candyType}, '
+        
+        return platData, bambooData, candyData
+
+    # saves only username, score, and lives left
+    def saveOnlyNameScore(self):
+        conn = sqlite3.connect('data.db')
+        cursor = conn.cursor()
+        if self.checkUsernameExists(self.username):
+            # user has already made a previous account
+            # compare highScore to current score
+            try:
+                cursor.execute('SELECT highScore FROM userData WHERE username = :username', {'username': self.username})
+                highScore = cursor.fetchall()[0][0]
+                if self.score > highScore:
+                    highScore = self.score
+            except:
+                highScore = self.score
+            # data entry
+            cursor.execute('''UPDATE userData SET
+                        score = :score, 
+                        gpLives = :gpLives, rpLives = :rpLives,
+                        highScore = :highScore WHERE username = :username''', 
+                        {'score': self.score, 
+                        'gpLives': 0, 'rpLives': 0,
+                        'highScore': highScore, 
+                        'username': self.username})
+        else:
+            # make new user account
+            highScore = self.score
+            # data entry
+            cursor.execute('''INSERT OR REPLACE INTO userData VALUES
+                        (:username, :score, 
+                        :gpLives, :rpLives,
+                        :gpPosX, :gpPosY, 
+                        :rpPosX, :rpPosY,
+                        :currPlayer, :scrollX,
+                        :platforms, :bamboos, :candies,
+                        :highScore)''', 
+                        {'username': self.username, 'score': self.score, 
+                        'gpLives': 0, 'rpLives': 0,
+                        'gpPosX': 0, 'gpPosY': 0,
+                        'rpPosX': 0, 'rpPosY': 0,
+                        'currPlayer': '', 'scrollX': 0,
+                        'platforms': '', 'bamboos': '', 'candies': '',
+                        'highScore': highScore})
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    # saves user and game state data
+    def saveData(self):
+        platData, bambooData, candyData = self.getMyStringData()
+        
+        conn = sqlite3.connect('data.db')
+        cursor = conn.cursor()
+
+        if self.checkUsernameExists(self.username):
+            # user has already made a previous account
+            # compare highScore to current score
+            try:
+                cursor.execute('SELECT highScore FROM userData WHERE username = :username', {'username': self.username})
+                highScore = cursor.fetchall()[0][0]
+                if self.score > highScore:
+                    highScore = self.score
+            except:
+                highScore = self.score
+            # data entry
+            cursor.execute('''UPDATE userData SET 
+                        score = :score, 
+                        gpLives = :gpLives, rpLives = :rpLives,
+                        gpPosX = :gpPosX, gpPosY = :gpPosY, 
+                        rpPosX = :rpPosX, rpPosY = :rpPosY,
+                        currPlayer = :currPlayer, scrollX = :scrollX,
+                        platforms = :platforms, bamboos = :bamboos, candies = :candies,
+                        highScore = :highScore WHERE username = :username''',
+                        {'score': self.score, 
+                        'gpLives': self.giantPanda.livesLeft, 'rpLives': self.redPanda.livesLeft,
+                        'gpPosX': self.giantPanda.pos.x, 'gpPosY': self.giantPanda.pos.y,
+                        'rpPosX': self.redPanda.pos.x, 'rpPosY': self.redPanda.pos.y,
+                        'currPlayer': self.currPlayer.name, 'scrollX': self.scrollX,
+                        'platforms': platData, 'bamboos': bambooData, 'candies': candyData,
+                        'highScore': highScore, 
+                        'username': self.username})
+        else:
+            # make new user account
+            highScore = self.score
+            # data entry
+            cursor.execute('''INSERT OR REPLACE INTO userData VALUES
+                        (:username, :score, 
+                        :gpLives, :rpLives,
+                        :gpPosX, :gpPosY, 
+                        :rpPosX, :rpPosY,
+                        :currPlayer, :scrollX,
+                        :platforms, :bamboos, :candies,
+                        :highScore)''', 
+                        {'username': self.username, 'score': self.score, 
+                        'gpLives': self.giantPanda.livesLeft, 'rpLives': self.redPanda.livesLeft,
+                        'gpPosX': self.giantPanda.pos.x, 'gpPosY': self.giantPanda.pos.y,
+                        'rpPosX': self.redPanda.pos.x, 'rpPosY': self.redPanda.pos.y,
+                        'currPlayer': self.currPlayer.name, 'scrollX': self.scrollX,
+                        'platforms': platData, 'bamboos': bambooData, 'candies': candyData,
+                        'highScore': highScore})
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    # helper for mergeSort()
+    def merge(self, list1, list2):
+        result = []
+        i = j = 0
+        while i < len(list1) or j < len(list2):
+            if j == len(list2) or (i < len(list1) and list1[i][1] >= list2[j][1]):
+                result.append(list1[i])
+                i += 1
+            else:
+                result.append(list2[j])
+                j += 1
+        return result
+
+    # recursive merge sort (highest to lowest)
+    # from: https://www.cs.cmu.edu/~112/notes/notes-recursion-part1.html#mergesort
+    def mergeSort(self, L):
+        if len(L) < 2:
+            return L
+        else:
+            mid = len(L) // 2
+            front = L[:mid]
+            back = L[mid:]
+            return self.merge(self.mergeSort(front), self.mergeSort(back))
+
+    # returns top 5 usernames and scores
+    def getLeaderboard(self):
+        conn = sqlite3.connect('data.db')
+        cursor = conn.cursor()
+
+        # get usernames and highscores of all users
+        cursor.execute('''SELECT username, highScore FROM userData''')
+
+        # mergesort from highest to lowest all of the scores
+        result = cursor.fetchall()
+        result = self.mergeSort(result)
+
+        # if there are less than 5 entries, fill the rest with dashes if none ('-', '-')
+        i = len(result)
+        while i < 5:
+            result.append(('-', '-'))
+            i += 1
+        
+        # if there are more than 5 entries, only show 5
+        if len(result) > 5:
+            result = result[:5]
+
+        return result
+
+    ####################################
+    # Screen methods
+    ####################################
+
     # game splash/start/intro screen
     def showIntroScreen(self):
         # intro image contains images from the original Double Panda game:
@@ -496,12 +794,73 @@ class Game(object):
         pg.display.flip()
         self.waitForKeyPress()
 
+    # login screen
+    def showLoginScreen(self):
+        # intro image contains images from the original Double Panda game:
+        # https://www.coolmathgames.com/0-double-panda
+        image = pg.image.load(os.path.join(imagesFolder, 'login.png')).convert()
+        self.screen.blit(image, (0, 0))
+        pg.display.flip()
+        username = self.waitForTextEntry(30, 390, 442)
+        self.username = username
+
+        conn = sqlite3.connect('data.db')
+        cursor = conn.cursor()        
+
+        # create table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS userData (
+                    username TEXT, score INTEGER, 
+                    gpLives INTEGER, rpLives INTEGER,
+                    gpPosX REAL, gpPosY REAL, 
+                    rpPosX REAL, rpPosY REAL,
+                    currPlayer TEXT, scrollX INTEGER, 
+                    platforms TEXT, bamboos TEXT, candies TEXT, 
+                    highScore INTEGER)''')
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    # collects text entry and returns text after 'Enter' is pressed
+    def waitForTextEntry(self, size, x, y):
+        waiting = True
+        text = ''
+        image = pg.image.load(os.path.join(imagesFolder, 'login.png')).convert()
+        while waiting:
+            for event in pg.event.get():
+                if event.type == pg.KEYDOWN:
+                    if event.unicode.isalnum():
+                        text += event.unicode
+                    elif event.key == pg.K_BACKSPACE:
+                        text = text[:-1]
+                    elif event.key == pg.K_RETURN:
+                        waiting = False
+                        return text
+                elif event.type == pg.QUIT:
+                    waiting = False
+                    self.running = False
+                    self.playing = False
+                    return ''
+                self.screen.blit(image, (0, 0))
+                self.drawText(text, size, white, x, y, 'left')
+                pg.display.flip()
+
     # instructions screen
     def showHelpScreen(self):
         # instructions image contains images from the original Double Panda game:
         # https://www.coolmathgames.com/0-double-panda
         image = pg.image.load(os.path.join(imagesFolder, 'instructions.png')).convert()
         self.screen.blit(image, (0, 0))
+        pg.display.flip()
+        self.waitForKeyPress()
+
+    # quit screen
+    def showQuitScreen(self):
+        # quit image contains images from the original Double Panda game:
+        # https://www.coolmathgames.com/0-double-panda
+        image = pg.image.load(os.path.join(imagesFolder, 'quit.png')).convert()
+        self.screen.blit(image, (0, 0))
+        self.drawText(f'{self.score}', 20, tan, 417, 308, 'left')
         pg.display.flip()
         self.waitForKeyPress()
 
@@ -513,7 +872,19 @@ class Game(object):
             return
         image = pg.image.load(os.path.join(imagesFolder, 'gameover.png')).convert()
         self.screen.blit(image, (0, 0))
-        self.drawText(f'{self.score}', 20, tan, 410, 367, 'left')
+
+        # draw current score
+        self.drawText(f'{self.score}', 20, tan, 410, 224, 'left')
+
+        # draw leaderboad scores 
+        leaderboard = self.getLeaderboard()
+        for i in range(len(leaderboard)):
+            y = 380 + 20 * i
+            username = leaderboard[i][0]
+            score = leaderboard[i][1]
+            self.drawText(username, 15, tan, 395, y, 'right')
+            self.drawText(f'{score}', 15, tan, 431, y, 'left')
+
         pg.display.flip()
         self.waitForKeyPress()
 
@@ -526,6 +897,7 @@ class Game(object):
                 if event.type == pg.QUIT:
                     waiting = False
                     self.running = False
+                    self.playing = False
                 if event.type == pg.KEYDOWN:
                     waiting = False
 
@@ -544,7 +916,6 @@ class Game(object):
 
 g = Game()
 g.showIntroScreen()
-g.showHelpScreen()
 while g.running:
     g.new()
     g.run()

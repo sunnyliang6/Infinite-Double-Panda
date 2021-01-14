@@ -80,37 +80,39 @@ class Bamboo(pg.sprite.Sprite):
 # Candy gives Players points
 # Candy types: cupcake, pie slice, fortune cookie, fried rice
 class Candy(pg.sprite.Sprite):
-    def __init__(self, game, x, y):
+    def __init__(self, game, x, y, candyType):
         pg.sprite.Sprite.__init__(self)
         self.game = game
-        self.setCandyType(x, y)
-    
-    # sets candyType, image, and rect
-    def setCandyType(self, x, y):
-        r = random.randint(0, 100)
-        if (r < 70):
-            self.candyType = 'Cupcake'
-            self.scoreGain = 50
-            # following picture captured from: https://www.coolmathgames.com/0-double-panda
-            self.image = pg.image.load(os.path.join(imagesFolder, 'cupcake.png')).convert()
-            # self.image.set_colorkey(BLACK) # ignore black around the image in the rect
-        elif (70 < r < 98):
-            self.candyType = 'Pie Slice'
-            self.scoreGain = 100
-            # following picture captured from: https://www.coolmathgames.com/0-double-panda
-            self.image = pg.image.load(os.path.join(imagesFolder, 'pie.png')).convert()
-            # self.image.set_colorkey(BLACK) # ignore black around the image in the rect
-        else:
-            self.candyType = 'Fortune Cookie'
-            self.scoreGain = 500
-            # following picture captured from: https://www.coolmathgames.com/0-double-panda
-            self.image = pg.image.load(os.path.join(imagesFolder, 'fortunecookie.png')).convert()
-            # self.image.set_colorkey(BLACK) # ignore black around the image in the rect
-        
+        self.setCandyType(x, y, candyType)
+
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = y - self.rect.height # in order to be able to draw it from the upper left hand corner
     
+    # sets candyType, image, and rect
+    def setCandyType(self, x, y, candyType):
+        r = random.randint(0, 100)
+        if r < 70 or candyType.lower() == 'cupcake':
+            self.candyType = 'Cupcake'
+            self.scoreGain = 50
+            # following picture captured from: https://www.coolmathgames.com/0-double-panda
+            self.image = pg.image.load(os.path.join(imagesFolder, 'cupcake.png')).convert()
+        elif 70 <= r < 98 or candyType.lower() == 'pie slice':
+            self.candyType = 'Pie Slice'
+            self.scoreGain = 100
+            # following picture captured from: https://www.coolmathgames.com/0-double-panda
+            self.image = pg.image.load(os.path.join(imagesFolder, 'pie.png')).convert()
+        elif 98 <= r <= 100 or candyType.lower() == 'fortune cookie':
+            self.candyType = 'Fortune Cookie'
+            self.scoreGain = 500
+            # following picture captured from: https://www.coolmathgames.com/0-double-panda
+            self.image = pg.image.load(os.path.join(imagesFolder, 'fortunecookie.png')).convert()
+        elif candyType.lower() == 'fried rice':
+            self.candyType = 'Fried Rice'
+            self.scoreGain = 1000
+            # following picture captured from: https://www.coolmathgames.com/0-double-panda
+            self.image = pg.image.load(os.path.join(imagesFolder, 'friedrice.png')).convert()
+
     # makes the candy into a fried rice that only RedPanda can eat
     def makeIntoFriedRice(self):
         x, y = self.rect.centerx, self.rect.bottom

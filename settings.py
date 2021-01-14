@@ -55,7 +55,7 @@ enemyHeight = 56
 enemyWalkVel = 1
 enemyRepeatSprite = 3
 enemyNumSprites = 6
-enemyShootVel = 10
+enemyShootVel = 8
 enemyShootWaitTime = 3000
 
 # terrain properties

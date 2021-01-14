@@ -527,30 +527,35 @@ class ArcherEnemy(Enemy):
 
     # predicts where to shoot
     def predictTarget(self, targetPlayer):
-        if (self.game.score >= 0): # <= 100000
+        if (self.game.score <= 10000):
             targetX = targetPlayer.rect.centerx
             targetY = targetPlayer.rect.centery
         else: # enemy shooting AI
             # speed of weapon increases
-            self.weapon.v *= 1.01
-            targetY = targetPlayer.rect.centery
-            # targetX changes based on direction of currPlayer
-            if (self.currPlayer.isWalkingLeft):
-                if (self.shootCount == 0):
-                    targetX = targetPlayer.x
-                elif (self.shootCount == 1):
-                    targetX = targetPlayer.x - 150
-                elif (self.shootCount == 2):
-                    targetX = targetPlayer.x - 300
-            elif (self.currPlayer.isWalkingRight):
-                if (self.shootCount == 0):
-                    targetX = targetPlayer.x
-                elif (self.shootCount == 1):
-                    targetX = targetPlayer.x + 150
-                elif (self.shootCount == 2):
-                    targetX = targetPlayer.x + 300
+            self.weapon.shootVel *= 1.01
+
+            # predict where the weapon and targetPlayer will intersect based on velocities
+            # following code and math from: https://stackoverflow.com/a/2249237
+            a = (targetPlayer.vel.x) ** 2 + (targetPlayer.vel.y) ** 2 - (self.weapon.shootVel) ** 2
+            b = 2 * (targetPlayer.vel.x * (targetPlayer.pos.x - self.weapon.pos.x) + targetPlayer.vel.y * (targetPlayer.pos.y - self.weapon.pos.y))
+            c = (targetPlayer.pos.x - self.weapon.pos.x) ** 2 + (targetPlayer.pos.y - self.weapon.pos.y) ** 2
+            
+            disc = b ** 2 - 4 * a * c
+            if disc < 0:
+                targetX = targetPlayer.rect.centerx
+                targetY = targetPlayer.rect.centery
             else:
-                targetX = targetPlayer.x
+                t1 = (-b + math.sqrt(disc)) / (2 * a)
+                t2 = (-b - math.sqrt(disc)) / (2 * a)
+                t = 0
+                if t1 > 0 and t2 < 0:
+                    t = t1
+                elif t2 > 0 and t1 < 0:
+                    t = t2
+                elif t1 > 0 and t2 > 0:
+                    t = min(t1, t2)
+                targetX = t * targetPlayer.vel.x + targetPlayer.pos.x
+                targetY = t * targetPlayer.vel.y + targetPlayer.pos.y
 
         self.weapon.shootingCalculations(targetX, targetY, targetPlayer)
 
@@ -639,6 +644,7 @@ class Weapon(pg.sprite.Sprite):
 
         self.pos = vec(0, 0)
         self.vel = vec(0, 0)
+        self.shootVel = enemyShootVel
         self.enemy = enemy
 
         # target position
@@ -656,8 +662,8 @@ class Weapon(pg.sprite.Sprite):
         distance = ((distX) ** 2 + (distY) ** 2) ** 0.5
         if (distance > 0):
             angle = math.acos(distX / distance)
-        self.vel.x = enemyShootVel * math.cos(angle)
-        self.vel.y = enemyShootVel * math.sin(angle)
+        self.vel.x = self.shootVel * math.cos(angle)
+        self.vel.y = self.shootVel * math.sin(angle)
 
     # sets current position to given parameters
     def setPos(self, x, y):

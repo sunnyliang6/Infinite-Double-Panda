@@ -252,7 +252,6 @@ class Game(object):
         # from the video, I was also inspired to use a loop to generate 'terrain'
 
         # determine where the bottom platform will be
-        
         r1 = random.randint(0, 100)
         if (r1 < 40):
             bottomLevel = 1
@@ -776,10 +775,10 @@ class Game(object):
         conn = sqlite3.connect('data.db')
         cursor = conn.cursor()
 
-        # get usernames and highscores of all users
+        # get usernames and high scores of all users
         cursor.execute('''SELECT username, highScore FROM userData''')
 
-        # mergesort from highest to lowest all of the scores
+        # mergesort from highest to lowest all of the high scores
         result = cursor.fetchall()
         result = self.mergeSort(result)
 

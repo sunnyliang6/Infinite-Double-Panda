@@ -17,4 +17,4 @@ Open main.py and run.
 * Press 's' to add 10000 to the score. This is useful for testing the code since different parts of the game get harder/more complex as the score increases. (For example: enemy generation, ArcherEnemy will shoot based on the direction you are traveling in, and BasicEnemy will walk towards main player on the same platform.)
 * Press 'q' to quit the game and save your game data.
 ## Demo Video
-https://youtu.be/tKQwPNDR9XQ
+https://youtu.be/JEn2DQX2sW4

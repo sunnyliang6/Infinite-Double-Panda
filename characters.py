@@ -688,8 +688,8 @@ class Weapon(pg.sprite.Sprite):
             # passed through floor
             self.reset()
             self.enemy.shootCount += 1
-        elif abs(self.pos.x - self.enemy.pos.x) > 400:
-            # passed distance of 400 (went too far)
+        elif abs(self.pos.x - self.enemy.pos.x) > 500:
+            # passed distance of 500 (went too far)
             self.reset()
             self.enemy.shootCount += 1
         else:

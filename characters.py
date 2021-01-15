@@ -184,6 +184,7 @@ class Player(pg.sprite.Sprite):
             otherPlayerCollision != -1 or 
             floorCollision != -1 or
             enemyCollision != -1):
+            self.game.jumpSound.play()
             self.vel.y = -playerJumpVel
 
     # checks for collision with candy and eat it if there is 
@@ -382,9 +383,11 @@ class Enemy(pg.sprite.Sprite):
                     if (self.collidingWithGP and player.name == 'Giant Panda'):
                         self.collidingWithGP = False
                         player.livesLeft -= 1
+                        self.game.dieSound.play()
                     if (self.collidingWithRP and player.name == 'Red Panda'):
                         self.collidingWithRP = False
                         player.livesLeft -= 1
+                        self.game.dieSound.play()
 
     # when the GiantPanda kills the Enemy, it gains points from the Enemy
     def die(self):
@@ -583,6 +586,7 @@ class ArcherEnemy(Enemy):
             if result != None:
                 # close enough to shoot, start shooting
                 self.isShooting = True
+                self.game.shootSound.play()
                 self.weapon.setPos(self.rect.centerx, self.rect.centery)
                 self.predictTarget(result)
                 self.weapon.update()
@@ -693,6 +697,7 @@ class Weapon(pg.sprite.Sprite):
             collision = pg.sprite.collide_rect(self, self.targetPlayer)
             if collision:
                 self.targetPlayer.livesLeft -= 1
+                self.game.dieSound.play()
                 self.reset()
                 self.enemy.shootCount += 1
 

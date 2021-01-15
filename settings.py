@@ -21,6 +21,7 @@ scrollSpeedWhenSwitching = 10
 # set up assets folders
 gameFolder = os.path.dirname(__file__) # __file__ is the location of this file
 imagesFolder = os.path.join(gameFolder, 'images')
+soundsFolder = os.path.join(gameFolder, 'sounds')
 
 # color rgbs
 black = (0, 0, 0)

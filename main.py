@@ -1,6 +1,7 @@
 ####################################
 # This game is based on the original Double Panda game: 
 # https://www.coolmathgames.com/0-double-panda
+####################################
 
 ####################################
 # Run this file to run the project
@@ -19,7 +20,7 @@ class Game(object):
     # initializes game window, etc.
     def __init__(self):
         pg.init() # initialize pygame modules
-        # pg.mixer.init() # initialize mixer for music
+        pg.mixer.init() # initialize mixer for music
         self.screen = pg.display.set_mode((screenWidth, screenHeight))
         pg.display.set_caption(title)
         self.clock = pg.time.Clock()
@@ -39,6 +40,17 @@ class Game(object):
         self.players = pg.sprite.Group()
         self.playerMaxX = 0
 
+        # sounds
+        # Music stream is "Happy Tune" by syncopika from:
+        # https://opengameart.org/content/happy-tune
+        pg.mixer.music.load(os.path.join(soundsFolder, 'happytune.ogg'))
+        # "Platformer Jumping Sound" by dklon from: https://opengameart.org/content/platformer-jumping-sounds
+        self.jumpSound = pg.mixer.Sound(os.path.join(soundsFolder, 'jump.wav'))
+        # "8-Bit Retro SFX" by Christian DeTamble - http://therefactory.bplaced.net from: https://opengameart.org/content/8-bit-retro-sfx
+        self.shootSound = pg.mixer.Sound(os.path.join(soundsFolder, 'shoot.ogg'))
+        # "8-Bit Jump #1" by Jesús Lastra from: https://opengameart.org/content/8-bit-jump-1
+        self.dieSound = pg.mixer.Sound(os.path.join(soundsFolder, 'die.wav'))
+        
         # initialize the two players
         self.giantPanda = GiantPanda('Giant Panda', self)
         self.players.add(self.giantPanda)
@@ -107,11 +119,13 @@ class Game(object):
 
     # game loop
     def run(self):
+        pg.mixer.music.play(loops=-1)
         while self.playing:
             self.clock.tick(fps) # standardizes fps across machines
             self.events()
             self.update()
             self.draw()
+        pg.mixer.music.fadeout(500)
 
     # checks for events
     def events(self):

@@ -25,7 +25,7 @@ soundsFolder = os.path.join(gameFolder, 'sounds')
 
 # color rgbs
 black = (0, 0, 0)
-green = (0, 255, 0)
+green = (66, 181, 78)
 white = (255, 255, 255)
 tan = (186, 96, 3)
 

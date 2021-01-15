@@ -540,8 +540,8 @@ class ArcherEnemy(Enemy):
             # predict where the weapon and targetPlayer will intersect based on velocities
             # following code and math from: https://stackoverflow.com/a/2249237
             a = (targetPlayer.vel.x) ** 2 + (targetPlayer.vel.y) ** 2 - (self.weapon.shootVel) ** 2
-            b = 2 * (targetPlayer.vel.x * (targetPlayer.pos.x - self.weapon.pos.x) + targetPlayer.vel.y * (targetPlayer.pos.y - self.weapon.pos.y))
-            c = (targetPlayer.pos.x - self.weapon.pos.x) ** 2 + (targetPlayer.pos.y - self.weapon.pos.y) ** 2
+            b = 2 * (targetPlayer.vel.x * (targetPlayer.pos.x - self.weapon.pos.x) + targetPlayer.vel.y * (targetPlayer.rect.centery - self.weapon.pos.y))
+            c = (targetPlayer.pos.x - self.weapon.pos.x) ** 2 + (targetPlayer.rect.centery - self.weapon.pos.y) ** 2
             
             disc = b ** 2 - 4 * a * c
             if disc < 0:

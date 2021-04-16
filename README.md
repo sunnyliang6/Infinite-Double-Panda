@@ -1,6 +1,6 @@
 # Infinite Double Panda
 ## Overview
-Based on the original [Double Panda](https://www.coolmathgames.com/0-double-panda "Double Panda") game, this single-player game is one endless level that features random smart “terrain” generation and enemy AI that increases game difficulty. Users make a username that allows them to save their progress / game state and high score.
+Based on the original [Double Panda](https://www.coolmathgames.com/0-double-panda "Double Panda") game, this single-player game is one endless level that features random smart “terrain” generation, enemy AI that increases game difficulty, and an attractive user interface. Users make a username that allows them to save their progress / game state and high score.
 
 The goal of the game is to score as many points as possible by eating candy and killing enemies.
 
